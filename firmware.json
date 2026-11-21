@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "insertcoin",
+  "name": "INSERT COIN",
+  "author": "swtdr34mz (based on Blop by Obsimo)",
+  "license": "GPL-3.0-only",
+  "tagline": "Chiptune chords and melody with an 80s arcade shooter",
+  "description": "A chiptune chord player with an 80s arcade shooter that plays along. The black keys play the chords of 10 game-style levels, each with its own sound, rhythm and scale; the white keys play a melody that always fits the chord. Every key fires your ship: play on the beat for a combo. Sound effects in key and time, HURRY UP waves, boss waves that raise the key, an 8-BIT mode and an attract mode. Chip sounds, Game Boy style drums, a drum studio with 20 user slots, an 8-bar chord looper, bitcrusher. Chords and bass out over USB MIDI.",
+  "tags": ["chords", "drum-machine", "synth", "midi", "game"],
+  "install": "https://github.com/swtdr34mz-afk/INSERT_COIN/releases",
+  "source": "https://github.com/swtdr34mz-afk/INSERT_COIN",
+  "screenshot": "site/img/screen-main.png",
+  "hardware": {
+    "models": ["FM-1"],
+    "flash": ["856014", "B36014"],
+    "features": ["usb-audio-in", "usb-audio-out", "screen-reader", "backup"]
+  },
+  "credits": "Built on fm1-base (Charles Vestal) and felucca-bsp (Leo Kuroshita, Hügelton Instruments); title type Press Start 2P (CodeMan38, SIL OFL 1.1)."
+}

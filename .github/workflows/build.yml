@@ -93,7 +93,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/*.fwsc
+          files: |
+            build/*.fwsc
+            build/firmware.json
 
   emulator:
     # INSERT COIN in the browser: tools/build.py --web (Emscripten), the page and app.wasm in build/emu

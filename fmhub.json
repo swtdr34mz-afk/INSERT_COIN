@@ -1,9 +1,9 @@
 {
-  "what": "CHORD RUN's chiptune sibling with an 80s arcade shooter that fires on every key you play: 10 game-style chord sets on the black keys (each its own level), a melody that follows the chord on the white keys, chip sounds, Game Boy style drums, a DRUM STUDIO with 20 user slots and an 8-bar chord looper.",
+  "what": "A chiptune chord player with an 80s arcade shooter that plays along: game-style chord levels on the black keys, a melody that always fits on the white keys, every key fires your ship. Combo on the beat, sound effects in key and time, boss waves that raise the key, an attract mode, Game Boy style drums and a drum studio.",
   "author": "swtdr34mz (based on Blop by Obsimo)",
   "kinds": "chords",
   "play": "https://swtdr34mz-afk.github.io/INSERT_COIN/emu/",
   "image": "site/img/screen-main.png",
-  "sounds": "own: synthesized",
+  "sounds": "own: all synthesized, no samples",
   "color": "#FFD628"
 }
