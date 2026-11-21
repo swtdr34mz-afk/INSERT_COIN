@@ -1,0 +1,67 @@
+# INSERT COIN: the combo on the beat, the GAME page (SFX, HURRY UP, 8-BIT, ATTRACT), the attract mode
+wait 4200
+# TOXIC PLANT, 145 BPM, EIGHTHS: a chord starts the rhythm; melody notes on its eighths keep the combo
+key b0 down
+wait 20
+key b0 up
+wait 180
+tapkey w2
+wait 117
+tapkey w3
+wait 117
+tapkey w4
+wait 117
+tapkey w5
+wait 117
+tapkey w6
+wait 117
+tapkey w2
+wait 117
+tapkey w3
+wait 117
+tapkey w4
+wait 117
+tapkey w5
+wait 117
+tapkey w6
+wait 13
+expect combo >5
+expect mult >1
+shot combo.png
+# off the beat (a sixteenth late): the combo ends
+tapkey w3
+wait 30
+expect combo 0
+# the GAME page: SEL twice
+tap SEL
+tap SEL
+wait 50
+expect page 8
+shot game_page.png
+turn K3 1
+wait 300
+expect bit8 1
+wav bit8.wav
+wait 1500
+wavstop
+turn K3 -1
+wait 300
+expect bit8 0
+tap SEL
+wait 50
+expect page 0
+# the attract mode: 40 s with nothing played
+key b0 down
+wait 20
+key b0 up
+wait 300
+expect active 0
+wait 41000
+expect demo 1
+shot attract.png
+wav attract.wav
+wait 3000
+wavstop
+tapkey w2
+wait 50
+expect demo 0

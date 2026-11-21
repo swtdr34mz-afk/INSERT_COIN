@@ -45,7 +45,7 @@ static float *const ap_buf[4] = {ap_buf0, ap_buf1, ap_buf2, ap_buf3};
 
 /* ------------------------------------------------------------------ command queue (main loop -> render) --- */
 enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_GROOVE, CMD_DRUMS, CMD_BASS, CMD_MUFFLE,
-       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW, CMD_LBEND };
+       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW, CMD_LBEND, CMD_SFX, CMD_SFXLVL };
 typedef struct {
     uint8_t t;
     union {
@@ -65,6 +65,7 @@ typedef struct {
         struct { float cut, lev, rev, del; } lq;
         struct { float glide, vib; } lm;
         struct { uint8_t arp, rate, spread; float flow, swing, width, level; } cf;
+        struct { int type, quant; float notes[4]; } fx;
     } u;
 } cmd_t;
 #define QN 16u
@@ -182,7 +183,11 @@ static struct {
     int gn_vol, gn_cnt, gn_per, gn_tvol, gn_tcnt;
     float gp_ph, gp_inc, gp_duty, gp_len, gp_g;
     int gp_vol, gp_cnt, gp_per;
-    float g_dc, gk_a, gn_a, gp_a;                /* each channel's level, smoothed over half a millisecond: no clicks */
+    float g_dc, gk_a, gn_a, gp_a;
+    /* the sound effects: a pulse that steps through its notes (4-bit volume falling), some noise under it */
+    int fx_type, fx_n, fx_i, fx_wait, fx_vol, fx_cnt;
+    float fx_notes[4], fx_ph, fx_inc, fx_left, fx_len, fx_duty, fx_nz, fx_lvl, fx_a;
+    uint16_t fx_lfsr;                /* each channel's level, smoothed over half a millisecond: no clicks */
     int g_roll;
     float g_roll_left, g_roll_len, g_roll_g;
 } E;
@@ -288,6 +293,13 @@ void eng_fx(float reverb, float delay, float trem, float chorus, float crush)
     c.t = CMD_FX; c.u.f.rev = reverb; c.u.f.del = delay; c.u.f.trem = trem; c.u.f.chorus = chorus; c.u.f.crush = crush;
     push(&c);
 }
+void eng_sfx(int type, const float notes[4], int quant)
+{
+    cmd_t c;
+    c.t = CMD_SFX; c.u.fx.type = type; c.u.fx.quant = quant; copy(c.u.fx.notes, notes, sizeof c.u.fx.notes);
+    push(&c);
+}
+void eng_sfx_level(float level) { cmd_t c; c.t = CMD_SFXLVL; c.u.m = level; push(&c); }
 void eng_preview(int on) { cmd_t c; c.t = CMD_PREVIEW; c.u.blip = on; push(&c); }
 void eng_muffle(float m) { cmd_t c; c.t = CMD_MUFFLE; c.u.m = m; push(&c); }
 void eng_blip(int kind) { cmd_t c; c.t = CMD_BLIP; c.u.blip = kind; push(&c); }
@@ -568,6 +580,26 @@ static void arp_fire(float period)
     E.arp_fk = 1.0f / fm_maxf(1.0f, tau);
 }
 
+/* the sound effects: each a run of notes taken from the chord (index into its four, octaves up), so long each, a duty,
+ * noise under it (0..1) */
+static const struct { uint8_t n; int8_t idx[6], oct[6]; uint16_t ms; float duty, noise; } SFX[NSFX] = {
+    {2, {2, 0}, {1, 2}, 35, 0.125f, 0.0f},                              /* HIT: a short blip down */
+    {1, {0}, {-1}, 160, 0.5f, 1.0f},                                    /* BOOM: a burst of noise */
+    {4, {0, 1, 2, 3}, {1, 1, 1, 1}, 40, 0.25f, 0.0f},                   /* UFO: a run up */
+    {6, {0, 1, 2, 0, 1, 2}, {0, 0, 0, 1, 1, 1}, 70, 0.5f, 0.0f},        /* CLEAR: a fanfare */
+    {6, {3, 2, 1, 0, 2, 0}, {1, 1, 1, 1, 0, 0}, 90, 0.25f, 0.3f},       /* BOSS: it comes */
+    {6, {0, 2, 1, 3, 2, 0}, {0, 0, 1, 1, 1, 2}, 80, 0.125f, 0.5f},      /* DOWN: a boss down */
+};
+static void fx_note(void)
+{
+    int k = E.fx_i;
+    float m = E.fx_notes[SFX[E.fx_type].idx[k] & 3] + 12.0f * (float)SFX[E.fx_type].oct[k];
+    E.fx_inc = mtof(m) / SR;
+    E.fx_left = E.fx_len;
+    E.fx_vol = 13; E.fx_cnt = (int)(SR / 64.0f);
+}
+static void fx_start(void) { E.fx_wait = 0; E.fx_i = 0; E.fx_n = SFX[E.fx_type].n; E.fx_len = (float)SFX[E.fx_type].ms * 0.001f * SR; fx_note(); }
+
 /* the noise channel struck: its clock (Hz), 7- or 15-bit register, 4-bit volume, envelope (n / 64 s a step), length (s),
  * level, and a square body under it (Hz, 0 none: a snare's) */
 static void gb_noise(float clk, int w7, int vol, float env, float len, float g, float tone)
@@ -584,6 +616,7 @@ static void gb_noise(float clk, int w7, int vol, float env, float len, float g, 
 static void on_step(void)
 {
     int i = E.step, kick = 0;
+    if (E.fx_wait) fx_start();                       /* a sound effect waited for this sixteenth */
     if (i == 0) E.bar++;
     float sl = step_len(i);
     if (E.drums_on && ((E.active && !E.rh.hold) || E.preview)) {   /* the drums play with a rhythm only (or the studio's preview) */
@@ -731,6 +764,13 @@ static void run_commands(void)
             E.dl_time = fm_minf(0.75f * 60.0f / E.bpm * SR, (float)(DL_N - 2u));
             break;
         case CMD_FX: E.rev = c->u.f.rev; E.del = c->u.f.del; E.trem = c->u.f.trem; E.chorus = c->u.f.chorus; E.crush = c->u.f.crush; break;
+        case CMD_SFX:
+            if (c->u.fx.type < 0 || c->u.fx.type >= NSFX) break;
+            E.fx_type = c->u.fx.type; copy(E.fx_notes, c->u.fx.notes, sizeof E.fx_notes);
+            E.fx_duty = SFX[E.fx_type].duty; E.fx_nz = SFX[E.fx_type].noise;
+            if (c->u.fx.quant && E.running) { E.fx_wait = 1; E.fx_n = 0; } else fx_start();
+            break;
+        case CMD_SFXLVL: E.fx_lvl = c->u.m; break;
         case CMD_PREVIEW: E.preview = (uint8_t)(c->u.blip != 0); check_run(); break;
         case CMD_MUFFLE: E.muf_t = c->u.m; break;
         case CMD_BLIP:
@@ -828,7 +868,7 @@ void eng_init(void)
     }
     E.bm = E.btarget = 36.0f;
     E.rng = 0x1234567u;
-    E.gn_lfsr = 0x7FFFu;
+    E.gn_lfsr = 0x7FFFu; E.fx_lfsr = 0x1234u; E.fx_lvl = 0.6f;
     E.cut = 3800.0f; E.q = 1.0f; E.bpm = 118.0f;
     E.rh.hold = 1;
     E.fade_len = 0.004f * SR;
@@ -1391,6 +1431,31 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     E.bl_f = fm_minf(E.bl_f * E.bl_df, 6000.0f);   /* (it rose without end: no number left, a stutter) */
                     E.bl_env *= E.bl_dec;
                     l += bv; r += bv;
+                }
+                {   /* the sound effects */
+                    float fa = E.fx_n > 0 ? (float)E.fx_vol * (1.0f / 15.0f) : 0.0f, fv;
+                    E.fx_a += (fa - E.fx_a) * 0.05f;
+                    if (E.fx_a > 1e-4f && E.fx_lvl > 0.0f) {
+                        uint16_t x;
+                        E.fx_ph += E.fx_inc; if (E.fx_ph >= 1.0f) E.fx_ph -= 1.0f;
+                        fv = (E.fx_ph < E.fx_duty ? 1.0f : -1.0f) * (1.0f - E.fx_nz);
+                        if (E.fx_nz > 0.0f) {
+                            x = (uint16_t)((E.fx_lfsr ^ (E.fx_lfsr >> 1)) & 1u);
+                            E.fx_lfsr = (uint16_t)((E.fx_lfsr >> 1) | (x << 14));
+                            if (!E.fx_lfsr) E.fx_lfsr = 1u;
+                            fv += ((E.fx_lfsr & 1u) ? 1.0f : -1.0f) * E.fx_nz;
+                        }
+                        fv *= E.fx_a * E.fx_lvl * 0.16f;
+                        l += fv; r += fv;
+                    }
+                    if (E.fx_n > 0) {
+                        E.fx_left -= 1.0f;
+                        if (--E.fx_cnt <= 0) { E.fx_cnt = (int)(SR / 64.0f); if (E.fx_vol > 2) E.fx_vol--; }
+                        if (E.fx_left <= 0.0f) {
+                            E.fx_i++;
+                            if (E.fx_i >= E.fx_n) E.fx_n = 0; else fx_note();
+                        }
+                    }
                 }
                 if (E.crush > 0.01f) {           /* the bitcrusher: the mix held for a few samples, in fewer levels */
                     E.cr_left -= 1.0f;

@@ -39,6 +39,7 @@ jobs:
           build/host/insertcoin_host tests/basic.txt build/host
           build/host/insertcoin_host tests/run.txt build/host
           build/host/insertcoin_host tests/melody.txt build/host
+          build/host/insertcoin_host tests/game.txt build/host
 
       - name: JieLi toolchain
         run: fm1-base/tools/get_toolchain.sh "$HOME/.jieli"

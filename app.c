@@ -39,7 +39,7 @@
 #include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x50525534u            /* "PRU4": 10 sets */
+#define SET_MAGIC 0x50525535u            /* "PRU5": the GAME page */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -59,6 +59,7 @@ typedef struct {
     uint8_t dtrack, dkit, dswing, dslot;                  /* the drum studio: its track, the groove's kit and swing, the slot */
     uint8_t mfollow;                                      /* the melody follows: 0 SMART (its keys stay, the notes fit the chord),
                                                              1 ROOT (the chord's root on the leftmost key) */
+    uint8_t sfx, hurry, bit8, attract;                    /* the GAME page: the sound effects' level, HURRY UP, 8-BIT, ATTRACT */
     uint8_t rsv[3];
 } settings_t;
 static settings_t set;
@@ -83,6 +84,7 @@ static void settings_defaults(void)
     set.mglide = 0; set.moct = 2; set.mvib = 0; set.assist = 0;
     set.rhythm = 1;                                                    /* (a rhythm: the set's own, song_style) */
     set.mfollow = 0;
+    set.sfx = 60; set.hurry = 1; set.bit8 = 0; set.attract = 1;
     set.dtrack = 0; set.dslot = 0;
     song_style();
 }
@@ -495,9 +497,10 @@ void app_tick(void)
     }
 }
 
+static float hurry_bpm;                           /* HURRY UP: the tempo the waves added */
 static void send_params(void)
 {
-    eng_params(ck_bpm > 0.0f ? ck_bpm : (float)set.bpm, cutoff_hz(), reso_q(), set.side ? 0.75f : 0.0f, set.drums > 0);
+    eng_params(ck_bpm > 0.0f ? ck_bpm : (float)set.bpm + (set.hurry ? hurry_bpm : 0.0f), cutoff_hz(), reso_q(), set.side ? 0.75f : 0.0f, set.drums > 0);
 }
 
 static void clock_follow(uint32_t now)
@@ -536,7 +539,8 @@ static void send_fx(void)
 }
 static void send_cfx(void)
 {
-    eng_chordfx(set.carp, set.crate, (float)set.aflow * 0.01f, (float)set.aswing * 0.01f, (float)set.cwidth * 0.01f,
+    int bit8 = set.bit8 && !set.carp;           /* 8-BIT: as the old chips, no full chords: each one a fast arpeggio */
+    eng_chordfx(bit8 ? ARP_UP : set.carp, bit8 ? ARP_R_CHIP : set.crate, (float)set.aflow * 0.01f, (float)set.aswing * 0.01f, (float)set.cwidth * 0.01f,
                 set.cspread, (float)set.clevel * (1.0f / 80.0f));
 }
 static void send_groove(void)
@@ -653,6 +657,7 @@ static char chord_txt[16] = APP_NAME;
 static uint32_t hop_at;                                         /* the runner hops (a chord, a melody note) */
 static void gm_chord(void);
 static void gm_note(int pitch);
+static void gm_beat(void);
 static uint32_t chord_at;                                       /* when the chord began (ASSIST's beat) */
 static void play(int idx)
 {
@@ -698,7 +703,7 @@ static void rechord(void)
 
 /* ------------------------------------------------------------------ pages --- */
 enum { PG_MAIN, PG_FX, PG_ACC, PG_GROOVE, PG_BASS, PG_MELODY, PG_DRUMS, PG_MELODY2, PG_ACC2, PG_ARP, PG_STUDIO, NPAGE };
-static const char *const PAGE_NAME[NPAGE] = {"MAIN", "FX", "CHORDS", "GROOVE", "BASS", "MELODY", "DRUMS", "MELODY 2", "CHORDS 2",
+static const char *const PAGE_NAME[NPAGE] = {"MAIN", "FX", "CHORDS", "GROOVE", "BASS", "MELODY", "DRUMS", "MELODY 2", "GAME",
                                              "ARP", "DRUM STUDIO"};
 static const uint8_t PAGE_BTN[NPAGE] = {0xFF, B_FX, B_SEL, B_ENV, B_LFO, B_EDIT, B_GLO, B_EDIT, B_SEL, B_ARP, B_SEQ};   /* EDIT / SEL
                                                                                                                  GLO again: page 2 */
@@ -715,7 +720,7 @@ static const char *const ASSIST_NAME[3] = {"OFF", "CHORD", "GUIDE"};
 static const char *const FOLLOW_NAME[2] = {"SMART", "ROOT"};
 
 enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST };
-enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL, G_MELODY, G_CFX, G_STYLE, G_GROOVE_ED };
+enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL, G_MELODY, G_CFX, G_STYLE, G_GROOVE_ED, G_GAME };
 typedef struct {
     const char *lab;
     uint8_t *v;
@@ -733,6 +738,7 @@ static int mel_preset_at(int v)
 }
 static const char *const CHR_NAME_B[10] = {"VIPER", "COMET", "NOVA", "PULSAR", "ZENITH", "FLARE", "ORBIT", "RAPTOR", "QUASAR", "ION"};
 static int chars_unlocked(void);
+static int kits_unlocked(void);
 static const kdef_t KD[NPAGE][4] = {
     {{"CUTOFF", &set.cutoff, 0, 100, KD_PCT, G_PARAMS, 0}, {"GLIDE", &set.glide, 0, 100, KD_GLIDE, G_NONE, 0},
      {"LENGTH", &set.gate, 0, 100, KD_PCT, G_GROOVE, 0}, {"DRUMS", &set.drums, 0, 100, KD_OFF, G_DRUMLVL, 0}},
@@ -750,8 +756,8 @@ static const kdef_t KD[NPAGE][4] = {
      {"HATS", &set.dhat, 0, 100, KD_OFF, G_DRUMS, 0}, {"SNARE", &set.drim, 0, 100, KD_OFF, G_DRUMS, 0}},
     {{"GLIDE", &set.mglide, 0, 40, KD_GLIDE, G_MELODY, 0}, {"OCTAVE", &set.moct, 0, 4, KD_LIST, G_MELODY, MOCT_NAME},
      {"VIBRATO", &set.mvib, 0, 100, KD_OFF, G_MELODY, 0}, {"ASSIST", &set.assist, 0, 2, KD_LIST, G_NONE, ASSIST_NAME}},
-    {{"WIDTH", &set.cwidth, 0, 100, KD_PCT, G_CFX, 0}, {"SPREAD", &set.cspread, 0, NSPREAD - 1, KD_LIST, G_CFX, SPREAD_NAME},
-     {"SHIP", &set.chr, 0, 9, KD_LIST, G_NONE, CHR_NAME_B}, {0, 0, 0, 0, 0, 0, 0}},
+    {{"SFX", &set.sfx, 0, 100, KD_OFF, G_GAME, 0}, {"HURRY UP", &set.hurry, 0, 1, KD_LIST, G_PARAMS, ONOFF_NAME},
+     {"8-BIT", &set.bit8, 0, 1, KD_LIST, G_CFX, ONOFF_NAME}, {"ATTRACT", &set.attract, 0, 1, KD_LIST, G_NONE, ONOFF_NAME}},
     {{"MODE", &set.carp, 0, NARP - 1, KD_LIST, G_CFX, ARP_NAME}, {"RATE", &set.crate, 0, NARP_RATE - 1, KD_LIST, G_CFX, RATE_NAME},
      {"FLOW", &set.aflow, 0, 100, KD_PCT, G_CFX, 0}, {"SWING", &set.aswing, 0, 100, KD_OFF, G_CFX, 0}},
     {{"TRACK", &set.dtrack, 0, NTRACK - 1, KD_LIST, G_NONE, TRACK_NAME}, {"KIT", &set.dkit, 0, NKIT - 1, KD_LIST, G_GROOVE_ED, KIT_NAME},
@@ -810,6 +816,7 @@ void app_init(void)
     send_bass();
     send_fx();
     send_params();
+    eng_sfx_level((float)set.sfx * 0.01f);
 }
 
 void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
@@ -915,6 +922,7 @@ static void apply_group(int g)
     case G_MELODY: send_lead(); break;
     case G_CFX: send_cfx(); break;
     case G_CHORD: rechord(); break;
+    case G_GAME: eng_sfx_level((float)set.sfx * 0.01f); break;
     case G_STYLE: groove_load(set.dpat); send_drums(); send_params(); break;   /* a style: its groove, and its swing */
     case G_GROOVE_ED: wk.kit = set.dkit; wk.swing = set.dswing; wk_edited = 1; send_drums(); break;
     case G_DRUMLVL:
@@ -932,7 +940,7 @@ static void knob(int k, int32_t e)
     if (!d->v) return;                   /* (an empty place on the page) */
     prev_drums = set.drums;
     step = d->kind == KD_LIST ? e : d->kind == KD_BPM ? accel(EN_K1 + k, e) : accel(EN_K1 + k, e) * 3;
-    if (d->v == &set.chr) n = clamp((int32_t)*d->v + step, 0, chars_unlocked() - 1);   /* the ships unlocked */
+    if (d->v == &set.dkit) n = clamp((int32_t)*d->v + step, 0, kits_unlocked() - 1);   /* the kits unlocked */
     else if (d->v == &set.msound) n = MEL_PRESET[clamp(mel_preset_at(set.msound) + step, 0, NMEL_PRESET - 1)];   /* the melody's ones */
     else n = clamp((int32_t)*d->v + step, d->lo, d->hi);
     if (n == *d->v) return;
@@ -946,6 +954,7 @@ static void encoder(int k, int32_t e)
     switch (k) {
     case EN_SELECT:
         wrap_u8(&set.grid, e, NGRID);
+        hurry_bpm = 0.0f;                                       /* a new set: its own tempo and key again */
         song_style();                                           /* the song's own sound, tempo and drums */
         app_say("SET", GRID_DEF[set.grid].name);
         send_sound(); send_bass(); send_drums(); send_params(); send_fx(); send_cfx();
@@ -1066,15 +1075,8 @@ static void mission_text(char *b, char *p)
 
 static void add_metres(uint32_t m)
 {
-    int before = chars_unlocked(), after;
     prog.metres += m;
     prog_dirty = 1;
-    after = chars_unlocked();
-    if (after > before) {
-        char t[24];
-        t[0] = 0; text_cat(t, CHR_NAME_B[after - 1]); text_cat(t, " - SEL 2X: SHIP");
-        show_toast("NEW SHIP", t);
-    }
 }
 
 static void mission_check(void)
@@ -1241,7 +1243,7 @@ static void game_init(void)
         memset(&prog, 0, sizeof prog);
         prog.magic = PROG_MAGIC;
     }
-    if (set.chr >= chars_unlocked()) set.chr = 0;
+    set.chr = 0;
     mission_start();
 }
 
@@ -1554,6 +1556,9 @@ void app_backup_restored(void)           /* everything from the flash again, as 
     send_sound(); send_rhythm(); send_groove(); send_cfx(); send_drums(); send_bass(); send_fx(); send_params();
 }
 static int as_slot = -1, as_grid = -1;
+static void demo_poke(uint32_t now);
+static void demo_tick(uint32_t now);
+
 static void input(void)
 {
     uint32_t keys = plat_keys(), btn = plat_buttons(), k, lit_keys = 0, lit_btn = 0, mid_keys = 0, now = plat_ms();
@@ -1570,7 +1575,8 @@ static void input(void)
         if ((keys & bit) && !(ui.keys & bit) && mel_key((int)k)) {      /* (a white key, or a black one with no chord) */
             ld_held |= bit; ld_cur = (int)k; hop_at = now; eng_lead(key_pitch((int)k));
             game_note();
-            gm_note((int)key_pitch((int)k));                     /* a coin appears ahead, high as the note */
+            gm_note((int)key_pitch((int)k));
+            gm_beat();                                           /* on the beat: the combo goes on */                     /* a coin appears ahead, high as the note */
             guide_press((int)k, now);
         } else if (!(keys & bit) && (ui.keys & bit) && (ld_held & bit)) {
             ld_held &= ~bit;
@@ -1589,7 +1595,7 @@ static void input(void)
         if ((keys & bit) && !(ui.keys & bit)) {
             /* with a rhythm the chord keeps playing: the same key again stops it */
             if (set.rhythm && active && held_idx < 0 && cur_idx == (int)k) { stop(); user_chord(-1); }
-            else { held_idx = (int)k; play((int)k); user_chord((int)k); }
+            else { held_idx = (int)k; play((int)k); user_chord((int)k); gm_beat(); }
         } else if (!(keys & bit) && (ui.keys & bit) && held_idx == (int)k) {
             held_idx = -1;
             if (!set.rhythm) { stop(); user_chord(-1); }
@@ -1644,8 +1650,11 @@ static void input(void)
         else if (set.page != PG_MAIN) { set.page = PG_MAIN; dirty(); }
     }
     for (k = 0; k < NE; k++)
-        if ((e = plat_enc((int)k)) != 0)
+        if ((e = plat_enc((int)k)) != 0) {
+            demo_poke(now);
             encoder((int)k, e);
+        }
+    if (keys != ui.keys || btn != ui.btn) demo_poke(now);
     ui.keys = keys;
     ui.btn = btn;
     /* auto-save: 4 s after the last change, and never while a chord plays (a flash write stops the sound) */
@@ -1836,7 +1845,31 @@ static struct {
     float dive_t, hit, busy_t, refill;
     uint32_t score, hi, wave, banner_at;
     uint8_t pal;
+    uint32_t combo, mult;                        /* keys played on the beat in a row, the points' multiplier */
+    uint8_t boss, demo;                          /* a boss wave under way; the attract mode plays */
+    float bx, bflash, bfire; int bhp, bmax;      /* the boss: x, its hit flash, its next volley, its life */
+    uint32_t keyup, demo_score, demo_wave;       /* the boss waves' key changes; the score before the demo */
 } gm;
+
+/* the unlocks: palettes and drum kits, for the points ever scored (prog.rsv[0]) */
+static const uint32_t PAL_AT[NPAL] = {0u, 0u, 2000u, 6000u, 15000u, 30000u};
+static const uint32_t KIT_AT[NKIT] = {0u, 0u, 3000u, 8000u, 20000u};
+static int pals_unlocked(void) { int i, n = 0; for (i = 0; i < NPAL; i++) if (prog.rsv[0] >= PAL_AT[i]) n = i + 1; return n; }
+static int kits_unlocked(void) { int i, n = 0; for (i = 0; i < NKIT; i++) if (prog.rsv[0] >= KIT_AT[i]) n = i + 1; return n; }
+
+/* a sound effect made of the chord that plays: its notes from middle C up, on the next sixteenth */
+static void gm_sfx(int type)
+{
+    float nt[4];
+    int i, slot = last_slot < 0 ? 0 : last_slot;
+    chord_t c = slot_chord(slot, 0, 0);
+    if (!set.sfx) return;
+    for (i = 0; i < 4; i++) {
+        int iv = c.n ? c.iv[i % c.n] + 12 * (i / c.n) : i * 4;
+        nt[i] = (float)(60 + c.root + iv);
+    }
+    eng_sfx(type, nt, 1);
+}
 
 static void gm_burst(float x, float y, uint16_t c, int n)
 {
@@ -1853,16 +1886,57 @@ static void gm_burst(float x, float y, uint16_t c, int n)
 }
 static float form_x(int c) { return 120.0f + ((float)c - 3.5f) * 22.0f + gm.sway; }
 static float form_y(int r) { return 34.0f + (float)r * 13.0f; }
+/* points, times the combo's multiplier; they count up the unlocks (not in the attract mode's demo) */
 static void gm_points(uint32_t p)
 {
+    int pb = pals_unlocked(), kb = kits_unlocked();
+    p *= gm.mult ? gm.mult : 1u;
     gm.score += p;
-    if (gm.score > gm.hi) { gm.hi = gm.score; prog.rsv[2] = gm.hi; prog_dirty = 1; }
+    if (gm.demo) return;
+    if (gm.score > gm.hi) { gm.hi = gm.score; prog.rsv[2] = gm.hi; }
+    prog.rsv[0] += p;
+    prog_dirty = 1;
+    if (pals_unlocked() > pb) show_toast("NEW PALETTE", PAL[pals_unlocked() - 1].name);
+    else if (kits_unlocked() > kb) {
+        char t[28];
+        t[0] = 0; text_cat(t, KIT_NAME[kits_unlocked() - 1]); text_cat(t, " - IN THE STUDIO");
+        show_toast("NEW DRUM KIT", t);
+    }
 }
+/* a key played on the beat (an eighth, 70 ms either side) keeps the combo going; off the beat it ends */
+static void gm_beat(void)
+{
+    int st = 0;
+    float fr = 0.0f, pos, d;
+    uint32_t bar;
+    if (gm.demo || !eng_pos(&st, &fr, &bar)) return;    /* (no rhythm runs: no beat to be on) */
+    pos = (float)st + fr;
+    d = pos - 2.0f * (float)(int)(pos * 0.5f + 0.5f);
+    if (d < 0.0f) d = -d;
+    if (d * step_ms() <= 70.0f) {
+        uint32_t was = gm.mult;
+        gm.combo++;
+        gm.mult = gm.combo >= 24u ? 8u : gm.combo >= 12u ? 4u : gm.combo >= 4u ? 2u : 1u;
+        if (gm.mult > was) { char t[4]; t[0] = 'X'; t[1] = (char)('0' + gm.mult); t[2] = 0; app_say("COMBO", t); }
+    } else { gm.combo = 0; gm.mult = 1; }
+}
+static int boss_wave(uint32_t w) { return (w + 1u) % 4u == 0u; }
 static void gm_wave(void)
 {
     int r, c;
-    for (r = 0; r < FR; r++) for (c = 0; c < FC; c++) gm.alive[r][c] = 1;
     gm.banner_at = plat_ms();
+    if (boss_wave(gm.wave)) {                        /* every fourth wave: a boss, and the music goes up a key */
+        for (r = 0; r < FR; r++) for (c = 0; c < FC; c++) gm.alive[r][c] = 0;
+        gm.boss = 1; gm.bmax = gm.bhp = 12 + (int)gm.wave; gm.bx = 120.0f; gm.bfire = 2.0f; gm.bflash = 0.0f;
+        gm_sfx(SFX_BOSS);
+        if (set.hurry && !gm.demo) {
+            set.key = (uint8_t)((set.key + 1u) % 12u); gm.keyup++;
+            rechord();
+            app_say("WARNING: BOSS", "KEY UP");
+        } else app_say("WARNING", "BOSS");
+        return;
+    }
+    for (r = 0; r < FR; r++) for (c = 0; c < FC; c++) gm.alive[r][c] = 1;
 }
 
 /* a key played: the ship fires (a chord two shots side by side, a melody note one) */
@@ -1886,18 +1960,24 @@ static void gm_step(uint32_t now, float dt)
 {
     int i, r, c, left = 0, busy = run.speed > 0.5f;
     float threat = 0.0f, tx = 120.0f;
-    if (!gm.inited) { gm.inited = 1; gm.sx = 120.0f; gm.hi = prog.rsv[2]; gm_wave(); gm.banner_at = 0; }
+    if (!gm.inited) { gm.inited = 1; gm.sx = 120.0f; gm.hi = prog.rsv[2]; gm.mult = 1; gm_wave(); gm.banner_at = 0; }
     gm.t += dt;
     gm.sway = 34.0f * fm_sin_turns(gm.t * 0.07f);
     if (busy) gm.busy_t += dt;
-    gm.pal = (uint8_t)((gm.wave + (uint32_t)(gm.busy_t / 45.0f)) % NPAL);
+    gm.pal = (uint8_t)((gm.wave + (uint32_t)(gm.busy_t / 45.0f)) % (uint32_t)pals_unlocked());
     for (r = 0; r < FR; r++) for (c = 0; c < FC; c++) left += gm.alive[r][c] != 0;
+    left += gm.boss;
     if (!left) {                                                        /* a wave down: the next, in new colours */
         if (gm.refill <= 0.0f) {
             gm.refill = 1.6f;
             gm.wave++;
             gm_points(500u);
-            app_say("WAVE CLEAR", "+500");
+            gm_sfx(SFX_CLEAR);
+            if (set.hurry && !gm.demo && hurry_bpm < 24.0f) {          /* HURRY UP: each wave a little faster */
+                hurry_bpm += 3.0f;
+                send_params();
+                app_say("WAVE CLEAR", "HURRY UP!");
+            } else app_say("WAVE CLEAR", "+500");
         }
         gm.refill -= dt;
         if (gm.refill <= 0.0f) gm_wave();
@@ -1939,6 +2019,17 @@ static void gm_step(uint32_t now, float dt)
             if (gm.alive[gm.dv[i].r][gm.dv[i].c] == 2) gm.alive[gm.dv[i].r][gm.dv[i].c] = 1;
         }
     }
+    if (gm.boss) {                                                      /* the boss sways and fires volleys of three */
+        gm.bx = 120.0f + 70.0f * fm_sin_turns(gm.t * 0.12f);
+        if (gm.bflash > 0.0f) gm.bflash -= dt;
+        gm.bfire -= dt;
+        if (busy && gm.bfire <= 0.0f) {
+            int e, k = 0;
+            gm.bfire = 1.7f;
+            for (e = 0; e < GM_EB && k < 3; e++)
+                if (!gm.eb[e].on) { gm.eb[e].on = 1; gm.eb[e].x = gm.bx + (float)(k - 1) * 14.0f; gm.eb[e].y = 40.0f; gm.eb[e].vy = 85.0f; k++; }
+        }
+    }
     /* the saucer crosses now and then */
     gm.ufo_t -= dt;
     if (!gm.ufo_on && busy && gm.ufo_t <= 0.0f) { gm.ufo_on = 1; gm.ufo_x = -16.0f; gm.ufo_t = 18.0f; }
@@ -1955,6 +2046,7 @@ static void gm_step(uint32_t now, float dt)
                     gm.alive[r][c] = 0; hit = 1;
                     gm_burst(form_x(c), form_y(r), rgb3(PAL[gm.pal].row[r]), 7);
                     gm_points(r == 0 ? 30u : r < 3 ? 20u : 10u);
+                    gm_sfx(SFX_HIT);
                 }
         for (c = 0; c < GM_DIVE && !hit; c++)
             if (gm.dv[c].on && fm_fabsf(gm.shot[i].x - gm.dv[c].x) < 9.0f && fm_fabsf(gm.shot[i].y - gm.dv[c].y) < 8.0f) {
@@ -1962,12 +2054,26 @@ static void gm_step(uint32_t now, float dt)
                 gm_burst(gm.dv[c].x, gm.dv[c].y, C_WHI, 6);
                 gm_burst(gm.dv[c].x, gm.dv[c].y, rgb3(PAL[gm.pal].row[gm.dv[c].r]), 6);
                 gm_points(80u);
+                gm_sfx(SFX_BOOM);
             }
         if (!hit && gm.ufo_on && fm_fabsf(gm.shot[i].x - gm.ufo_x) < 12.0f && gm.shot[i].y < 12.0f) {
             gm.ufo_on = 0; hit = 1;
             gm_burst(gm.ufo_x, 6.0f, rgb3(PAL[gm.pal].acc), 12);
             gm_points(300u);
+            gm_sfx(SFX_UFO);
             app_say("SAUCER", "+300");
+        }
+        if (!hit && gm.boss && fm_fabsf(gm.shot[i].x - gm.bx) < 24.0f && gm.shot[i].y < 36.0f && gm.shot[i].y > 12.0f) {
+            hit = 1; gm.bflash = 0.12f;
+            gm_burst(gm.shot[i].x, gm.shot[i].y, C_WHI, 3);
+            if (--gm.bhp <= 0) {                                        /* the boss down */
+                gm.boss = 0;
+                gm_burst(gm.bx, 24.0f, rgb3(PAL[gm.pal].acc), 16);
+                gm_burst(gm.bx, 24.0f, C_YEL, 14);
+                gm_points(2000u);
+                gm_sfx(SFX_DOWN);
+                app_say("BOSS DOWN", "+2000");
+            } else gm_sfx(SFX_HIT);
         }
         if (hit) gm.shot[i].on = 0;
     }
@@ -2021,6 +2127,52 @@ static void gm_step(uint32_t now, float dt)
     (void)now;
 }
 
+/* ------------------------------------------------------------------ the attract mode --- */
+/* No one playing for 40 s (ATTRACT on): the game plays itself as an arcade does, INSERT COIN blinking: the set's chords
+ * one a bar, a made-up melody, the ship firing. Any key, button or knob: it stops (its score is not kept). */
+static struct { uint8_t on; uint32_t last, t0; int32_t bar, eighth; int w; } demo;
+static void demo_poke(uint32_t now)
+{
+    demo.last = now;
+    if (!demo.on) return;
+    demo.on = 0; gm.demo = 0;
+    gm.score = gm.demo_score; gm.wave = gm.demo_wave;
+    if (active) stop();
+    held_idx = -1;
+    eng_lead(-1.0f);
+}
+static void demo_tick(uint32_t now)
+{
+    float bar_ms = 240000.0f / (float)set.bpm;
+    int32_t b, e8;
+    if (!demo.on) {
+        if (!set.attract || !demo.last || now - demo.last < 40000u || active || lp.st == LP_PLAY || lp.st == LP_REC
+            || set.page == PG_STUDIO || ui.help || preview)
+            { if (!demo.last) demo.last = now; return; }
+        demo.on = 1; gm.demo = 1; demo.t0 = now; demo.bar = -1; demo.eighth = -1; demo.w = 7;
+        gm.demo_score = gm.score; gm.demo_wave = gm.wave;
+    }
+    b = (int32_t)((float)(now - demo.t0) / bar_ms);
+    e8 = (int32_t)((float)(now - demo.t0) / (bar_ms * 0.125f));
+    if (b != demo.bar) {                                       /* a chord each bar */
+        int slot = (int)(b % (int32_t)grid_n[set.grid]), k;
+        demo.bar = b;
+        for (k = 0; k < NKEYS; k++)
+            if (kb_black[k] == slot) { held_idx = -1; play(k); break; }
+    }
+    if (e8 != demo.eighth) {                                   /* the melody: a walk on the white keys */
+        uint32_t h = hash32((uint32_t)e8 * 2246822519u + (uint32_t)set.grid);
+        demo.eighth = e8;
+        if (h % 3u) {
+            demo.w += (int)(h >> 8) % 5 - 2;
+            if (demo.w < 4) demo.w = 5;
+            if (demo.w > 12) demo.w = 11;
+            eng_lead(key_pitch(kb_wkey[demo.w]));
+            gm_note(0);
+        } else eng_lead(-1.0f);
+    }
+}
+
 /* ---- the sprites: rows of letters, a colour each ('.' none); drawn in blocks of sc x sc */
 static uint16_t spr_pal[4];
 static uint16_t spr_col(char c)
@@ -2061,10 +2213,11 @@ static const char *const SHIP[9] = {
     ".....1.....", ".....1.....", "....111....", "....121....", "...11211...", ".1.11111.1.", "11111211111",
     "1.2.111.2.1", "....3.3....",
 };
+static const char *const MOTHER[8] = {
+    "....11111111....", "..111111111111..", ".11K11K11K11K11.", "1111111111111111", "2121212121212121",
+    ".11111111111111.", "..2..2....2..2..", ".2...2....2...2.",
+};
 static const char *const UFO[5] = {"....1111....", "..11111111..", ".1K11K11K11.", "111111111111", "..2.2..2.2.."};
-/* the ten ships' colours (SEQ: the unlocked ones) */
-static const uint8_t SHIP_COL[10][3] = {{248, 248, 248}, {90, 220, 255}, {255, 214, 40}, {255, 110, 180}, {120, 255, 120},
-                                        {255, 140, 20}, {200, 140, 255}, {255, 80, 80}, {160, 255, 240}, {255, 255, 160}};
 
 /* ---- the view: the sky, its grid and dots, the invaders, the saucer, shots, the ship, the sparks */
 static int view_y(int vt, int vb, float y) { return vt + (int)(y * (float)(vb - vt) / (float)VH); }
@@ -2110,6 +2263,12 @@ static void draw_game(int vt, int vb, uint32_t now)
             spr_draw(INV[rr == 0 ? 0 : rr < 3 ? 1 : 2][(int)(gm.t * 6.0f) & 1], 8, 7, (int)gm.dv[i].x - 4 * sc,
                      view_y(vt, vb, gm.dv[i].y) - 3 * sc, sc);
         }
+    if (gm.boss) {                                                     /* the boss and its life */
+        spr_pal[1] = gm.bflash > 0.0f ? C_WHI : rgb3(PAL[gm.pal].row[0]); spr_pal[2] = rgb3(PAL[gm.pal].acc);
+        spr_draw(MOTHER, 16, 8, (int)gm.bx - 8 * (sc + 1), view_y(vt, vb, 24.0f) - 4 * (sc + 1), sc + 1);
+        NSR(70, view_y(vt, vb, 44.0f), 100, 4, RGB(60, 20, 20));
+        NSR(70, view_y(vt, vb, 44.0f), 100 * gm.bhp / (gm.bmax ? gm.bmax : 1), 4, C_RED);
+    }
     if (gm.ufo_on) {
         spr_pal[1] = rgb3(PAL[gm.pal].acc); spr_pal[2] = (now / 100u) % 2u ? C_WHI : C_RED;
         spr_draw(UFO, 12, 5, (int)gm.ufo_x - 6 * sc / 2 * 2, view_y(vt, vb, 6.0f), sc);
@@ -2123,8 +2282,7 @@ static void draw_game(int vt, int vb, uint32_t now)
             NSR((int)gm.eb[i].x - 1 + z, y, 2, 2, C_YEL); NSR((int)gm.eb[i].x - z, y + 2, 2, 2, C_RED); NSR((int)gm.eb[i].x - 1 + z, y + 4, 2, 2, C_YEL);
         }
     {   /* the ship */
-        int ch = set.chr < 10 ? set.chr : 0;
-        spr_pal[1] = gm.hit > 0.0f && (now / 60u) % 2u ? C_RED : rgb3(SHIP_COL[ch]);
+        spr_pal[1] = gm.hit > 0.0f && (now / 60u) % 2u ? C_RED : C_WHI;
         spr_pal[2] = rgb3(PAL[gm.pal].acc);
         spr_pal[3] = (now / 50u) % 2u ? C_YEL : C_ORA;
         spr_draw(SHIP, 11, 9, (int)gm.sx - 11 * sc / 2, view_y(vt, vb, (float)SHIP_Y) - 4 * sc, sc);
@@ -2289,11 +2447,11 @@ static void px_splash(int bottom)
         box(8, 168 - 120, 224, 64, C_YEL);
         a[0] = 0; text_cat(a, "HIGH SCORE "); int_text((int32_t)gm.hi, n); text_cat(a, n);
         cv_text((240 - text_w(&FONT_XS, a)) / 2, 173 - 120, &FONT_XS, a, C_YEL);
-        a[0] = 0; text_cat(a, "TOTAL "); int_text((int32_t)prog.metres, n); text_cat(a, n);
-        text_cat(a, " M  BEST "); int_text((int32_t)prog.best, n); text_cat(a, n); text_cat(a, " M");
+        a[0] = 0; text_cat(a, "POINTS EVER "); int_text((int32_t)prog.rsv[0], n); text_cat(a, n);
+        text_cat(a, "  MISSIONS "); int_text((int32_t)prog.missions, n); text_cat(a, n);
         cv_text((240 - text_w(&FONT_XS, a)) / 2, 188 - 120, &FONT_XS, a, C_WHI);
-        a[0] = 0; text_cat(a, "SHIPS "); int_text(chars_unlocked(), n); text_cat(a, n);
-        text_cat(a, "/10  MISSIONS "); int_text((int32_t)prog.missions, n); text_cat(a, n);
+        a[0] = 0; text_cat(a, "PALETTES "); int_text(pals_unlocked(), n); text_cat(a, n);
+        text_cat(a, "/6  KITS "); int_text(kits_unlocked(), n); text_cat(a, n); text_cat(a, "/5");
         cv_text((240 - text_w(&FONT_XS, a)) / 2, 203 - 120, &FONT_XS, a, C_WHI);
         a[0] = 0; text_cat(a, "SETS PLAYED "); int_text(popcount8(prog.songs), n); text_cat(a, n);
         text_cat(a, "/"); int_text(NGRID, n); text_cat(a, n);
@@ -2413,13 +2571,20 @@ static void draw_hud(int vt, uint32_t now)
     score_text(b, gm.hi); hud_text(114, vt + 1, &FONT_T, b, C_WHI, 12);
     t[0] = 0; text_cat(t, "WAVE "); int_text((int32_t)(gm.wave + 1), b); text_cat(t, b);
     hud_text(234 - text_w(&FONT_T, t), vt + 1, &FONT_T, t, C_YEL, 12);
+    if (gm.combo) {                                                     /* the combo: keys on the beat in a row */
+        t[0] = 0; text_cat(t, "COMBO "); int_text((int32_t)gm.combo, b); text_cat(t, b);
+        if (gm.mult > 1u) { text_cat(t, " X"); int_text((int32_t)gm.mult, b); text_cat(t, b); }
+        hud_text(234 - text_w(&FONT_T, t), vt + 13, &FONT_T, t, gm.mult > 1u ? C_YEL : C_GREY, 12);
+    }
     if (set.page == PG_STUDIO) return;
     if (active) hud_text(6, vt + 12, &FONT_S, chord_txt, C_WHI, 16);
+    if (gm.demo) return;
     mission_text(m, pr);
-    fit_text(m, &FONT_T, 140);
+    fit_text(m, &FONT_T, 180);
     w = text_w(&FONT_T, m) + (pr[0] ? text_w(&FONT_T, pr) + 5 : 0);
-    x = hud_text(234 - w, vt + 13, &FONT_T, m, C_GREY, 12);
-    if (pr[0]) hud_text(x + 5, vt + 13, &FONT_T, pr, C_YEL, 12);
+    x = hud_text(6, 160, &FONT_T, m, C_GREY, 12);
+    if (pr[0]) hud_text(x + 5, 160, &FONT_T, pr, C_YEL, 12);
+    (void)w;
     (void)now;
 }
 
@@ -2459,6 +2624,11 @@ static void draw_screen(int bottom)
         if (set.page == PG_STUDIO) draw_studio(now);
     }
     draw_hud(vt, now);
+    if (gm.demo && !bottom && (now / 500u) % 2u) {                     /* the attract mode */
+        int32_t w = text_w(&FONT_L, "INSERT COIN");
+        stext((240 - w) / 2, 70, &FONT_L, "INSERT COIN", C_YEL);
+        stext((240 - text_w(&FONT_XS, "PRESS ANY KEY")) / 2, 104, &FONT_XS, "PRESS ANY KEY", C_WHI);
+    }
     if (bottom && set.page != PG_STUDIO) draw_chords();
     if (now < toast.until && !bottom) {   /* a celebration: a new ship, a mission done */
         uint32_t age = now - toast.at;
@@ -2498,6 +2668,7 @@ void app_frame(void)
         if (dt > 0.1f) dt = 0.1f;
         ui.frame_at = now;
         scene_step(now, dt);
+        if (sc.title < 0.5f) demo_tick(now);
         game_step(now, dt);
         gm_step(now, dt);
         {
@@ -2557,6 +2728,14 @@ int app_expect(const char *what, int *got)
     else if (!strncmp(what, "used", 4) && what[4] >= '0' && what[4] <= '9') *got = user.g[atoi(what + 4) % NUSER].used;
     else if (!strcmp(what, "crush")) *got = set.crush;
     else if (!strcmp(what, "mfollow")) *got = set.mfollow;
+    else if (!strcmp(what, "combo")) *got = (int)gm.combo;
+    else if (!strcmp(what, "mult")) *got = (int)gm.mult;
+    else if (!strcmp(what, "demo")) *got = demo.on;
+    else if (!strcmp(what, "boss")) *got = gm.boss;
+    else if (!strcmp(what, "wave")) *got = (int)gm.wave;
+    else if (!strcmp(what, "hurry")) *got = (int)hurry_bpm;
+    else if (!strcmp(what, "points")) *got = (int)prog.rsv[0];
+    else if (!strcmp(what, "bit8")) *got = set.bit8;
     else if (!strcmp(what, "assist_keys")) *got = (int)as_keys;
     else if (!strcmp(what, "guide_key")) *got = gd.key;
     else if (!strcmp(what, "guide_next")) *got = gd.next_key;

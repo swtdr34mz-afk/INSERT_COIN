@@ -43,9 +43,17 @@ fires on every key you play.
 - **The game:** an early-80s vertical shooter of its own on the screen: a dotted grid rushing towards you, a formation of
   pixel invaders swaying at the top, some diving at the ship in arcs and firing, a saucer now and then. The ship flies by
   itself (it dodges, and lines up under the invaders) and fires on every key you play: a chord a double shot, a melody
-  note one. A wave shot down brings the next in new colours: six palettes of the era (radar, vector, neon, amber, ice,
-  ultra), turning with the waves and the time played. One screen for every page. The high score, metres, missions and
-  ten ships to unlock (SEL twice: SHIP) are kept.
+  note one. One screen for every page.
+  - **Combo:** keys played on the beat (an eighth, 70 ms either side) count up a combo: x2 from 4, x4 from 12, x8 from 24
+    in a row; one off the beat ends it.
+  - **Sound effects made of the music:** hits, blasts, the saucer, a wave cleared, a boss: 8-bit effects whose notes are
+    the chord that plays, each on the next sixteenth: the game plays along in key and in time.
+  - **HURRY UP:** each wave cleared, the tempo a little faster (up to +24 BPM); every fourth wave a boss (a mothership
+    firing volleys), and the music goes up a key. A new set: its own tempo and key again.
+  - **8-BIT:** as the old sound chips, no full chords: each one a fast arpeggio.
+  - **ATTRACT:** nobody playing for 40 s, the game plays itself as an arcade does, INSERT COIN blinking; any key stops it.
+  - **Unlocks:** the points ever scored unlock the palettes (six of the era: radar, vector, neon, amber, ice, ultra) and
+    the drum kits in the studio. The high score is kept.
 
 ## Controls
 
@@ -58,7 +66,7 @@ fires on every key you play.
 | PRESET | The chords' sound |
 | K1..K4 | The page's four settings (shown at the bottom of the screen) |
 | FX | Delay, crush, chorus, reverb |
-| SEL | Chords: key, voicing, bass note, level. SEL again: CHORDS 2: width, spread, SHIP (the unlocked ones) |
+| SEL | Chords: key, voicing, bass note, level. SEL again: GAME: SFX (the sound effects' level), HURRY UP, 8-BIT, ATTRACT |
 | ARP | The arpeggiator: mode, rate (1/4 .. 1/32, triplets, FAST, CHIP), flow, swing |
 | ENV | Groove: BPM, swing, density, sidechain |
 | LFO | Bass: sound, level, riff, filter |

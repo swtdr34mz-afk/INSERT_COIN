@@ -85,6 +85,11 @@ void eng_sync(int step, uint32_t at_ms);
 void eng_params(float bpm, float cut_hz, float q, float side, int drums_on);
 /* all 0..1; crush: the bitcrusher on the whole mix (fewer bits, a lower sample rate) */
 void eng_fx(float reverb, float delay, float trem, float chorus, float crush);
+/* the game's sound effects, made of the music: a hit, a blast, the saucer, a wave cleared, a boss; notes: four pitches of the
+ * chord that plays (MIDI, low to high); quant 1: on the next sixteenth (when the rhythm runs); level 0..1 (eng_sfx_level) */
+enum { SFX_HIT, SFX_BOOM, SFX_UFO, SFX_CLEAR, SFX_BOSS, SFX_DOWN, NSFX };
+void eng_sfx(int type, const float notes[4], int quant);
+void eng_sfx_level(float level);
 /* 1: the drums play on their own (the DRUM STUDIO's preview), with no chord */
 void eng_preview(int on);
 /* 0..1: the sound as heard from outside the room (muffled, quieter) */
