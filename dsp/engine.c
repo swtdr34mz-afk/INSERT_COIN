@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1 sound engine (PIXEL RUN: the chip waveforms, drums and bitcrusher). See engine.h. Single precision only (the FM-1's FPU), no double.
+/* OSR-1 sound engine (INSERT COIN: the chip waveforms, drums and bitcrusher). See engine.h. Single precision only (the FM-1's FPU), no double.
  * The render works in chunks of 32 frames: pitches, the filter coefficient and the LFOs are updated per chunk,
  * envelopes, oscillators and effects per sample. */
 #include "engine.h"
@@ -168,7 +168,7 @@ static struct {
     float lglide, lvib, ld_tgt, ld_vph, ld_vamt;   /* the melody's glide (s) and vibrato, its target pitch, the LFO */
     uint32_t lr_w[4], lr_apw0, lr_apw1;
     float lr_lp[4], lr_ph[4], lr_en;
-    /* PIXEL RUN: the chip sounds' pitch drop (chords, melody), the PWM's phase, the bitcrusher, the drum preview,
+    /* INSERT COIN: the chip sounds' pitch drop (chords, melody), the PWM's phase, the bitcrusher, the drum preview,
      * the chip drums' noise (two shift registers, each with its clock) */
     float swp, ld_swp, pwm_ph, crush, cr_hold_l, cr_hold_r, cr_left;
     uint8_t preview;

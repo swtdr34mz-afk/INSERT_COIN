@@ -1,5 +1,5 @@
-# PIXEL RUN in the host simulator:
-#   X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host, then build/host/pixelrun_host tests/basic.txt build/host
+# INSERT COIN in the host simulator:
+#   X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host, then build/host/insertcoin_host tests/basic.txt build/host
 wait 600
 shot intro.png
 wait 3400

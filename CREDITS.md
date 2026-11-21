@@ -1,7 +1,7 @@
 # Credits
 
-PIXEL RUN by swtdr34mz: CHORD RUN's chiptune sibling, based on OSR-1 / Blop by Obsimo (OSR Records), under GPL-3.0-only.
-PIXEL RUN's own parts: the 20 game-style sets (chord progressions written by ear, under names of their own), the chip
+INSERT COIN by swtdr34mz: CHORD RUN's chiptune sibling, based on OSR-1 / Blop by Obsimo (OSR Records), under GPL-3.0-only.
+INSERT COIN's own parts: the 20 game-style sets (chord progressions written by ear, under names of their own), the chip
 waveforms and sounds, the chip drums and their 20 grooves, the DRUM STUDIO, the bitcrusher, the 8-bar loop and the pixel
 screens. From CHORD RUN (swtdr34mz): the melody voice, the runner, missions and the loop.
 

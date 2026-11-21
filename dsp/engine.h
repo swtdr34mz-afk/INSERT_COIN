@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records) */
-/* OSR-1 sound engine (PIXEL RUN: chip waveforms, chip drums, a bitcrusher, a drum preview for the studio):
+/* OSR-1 sound engine (INSERT COIN: chip waveforms, chip drums, a bitcrusher, a drum preview for the studio):
  * 4 chord voices (sub / FM / plucked string) with strum, a resonant filter, envelopes,
  * a 16-step chord-rhythm sequencer with groove (swing, density, gate), a bass with its own sounds and motifs,
  * a small drum kit (kick, hi-hat, rim) on 16-step patterns with a kit per style, sidechain, tremolo,
@@ -12,7 +12,7 @@
 #define ENG_SR 44100.0f
 
 enum { ENGINE_SUB, ENGINE_FM, ENGINE_PLUCK };
-/* the sub engine's waveforms: the classic four, then the chip ones (PIXEL RUN): pulses of 12.5 % and 25 % (W_SQUARE is the
+/* the sub engine's waveforms: the classic four, then the chip ones (INSERT COIN): pulses of 12.5 % and 25 % (W_SQUARE is the
  * 50 % one), the 4-bit stepped triangle of the 8-bit consoles, two 32-step 4-bit wavetables (a handheld's wave channel: warm,
  * and a nasal "voice"), a 16-step saw (a home computer's) and a pulse whose width sweeps (PWM: sound_t pwm, pwm_rate) */
 enum { W_SAW, W_SQUARE, W_TRI, W_SINE, W_P12, W_P25, W_NTRI, W_WAVE, W_VOICE, W_CSAW, W_PWM };

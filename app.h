@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records)
- * Copyright (C) 2026 swtdr34mz (PIXEL RUN) */
-/* PIXEL RUN by swtdr34mz (CHORD RUN's chiptune sibling, based on BLOP by Obsimo): game-style chord progressions on the black
+ * Copyright (C) 2026 swtdr34mz (INSERT COIN) */
+/* INSERT COIN by swtdr34mz (CHORD RUN's chiptune sibling, based on BLOP by Obsimo): game-style chord progressions on the black
  * keys, a melody on the white ones, chip sounds and drums, a drum studio, a looper and a runner that runs while you play,
  * for the M-VAVE FM-1 (on fm1-base).
  * This header is the app's half of the contract with the platform (device/unity.c, host/plat_host.c). */
@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PIXEL RUN"
+#define APP_NAME "INSERT COIN"
 #define APP_SPLASH_RGB RGB(255, 200, 40)
 #define APP_SPLASH                      /* app_splash: the intro's first picture, not the platform's white page */
 #define APP_TICK                        /* app_tick: the MIDI in, each clock timed to the ms */

@@ -1,4 +1,4 @@
-# PIXEL RUN
+# INSERT COIN
 
 A firmware for the M-VAVE FM-1 by **swtdr34mz**: the chiptune sibling of
 [CHORD RUN](https://github.com/swtdr34mz-afk/CHORD_RUN), based on [Blop / OSR-1](https://github.com/OSR-Experiment/OSR-1)
@@ -11,7 +11,7 @@ fires on every key you play.
 
 **Play it in the browser:** https://swtdr34mz-afk.github.io/PIXEL_RUN/emu/ (the same firmware, built for the browser).
 
-![PIXEL RUN](site/img/screen-main.png) ![DRUM STUDIO](site/img/screen-studio.png)
+![INSERT COIN](site/img/screen-main.png) ![DRUM STUDIO](site/img/screen-studio.png)
 
 ## What it does
 
@@ -101,9 +101,9 @@ Locally (Linux x86-64), the simulator and its tests (the screens' pixel type is 
 
     git clone --recursive https://github.com/swtdr34mz-afk/PIXEL_RUN && cd PIXEL_RUN
     X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host
-    build/host/pixelrun_host tests/basic.txt build/host     # sets, sounds, crush, the drum studio, the loop
-    build/host/pixelrun_host tests/run.txt build/host       # the run, a mission, the progress kept
-    build/host/pixelrun_host tests/melody.txt build/host    # the melody follows the chords
+    build/host/insertcoin_host tests/basic.txt build/host     # sets, sounds, crush, the drum studio, the loop
+    build/host/insertcoin_host tests/run.txt build/host       # the run, a mission, the progress kept
+    build/host/insertcoin_host tests/melody.txt build/host    # the melody follows the chords
 
 ## Licence and credits
 

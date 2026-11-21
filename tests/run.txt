@@ -1,4 +1,4 @@
-# PIXEL RUN: the runner, the first mission (PLAY 24 CHORDS), the progress kept across a reboot
+# INSERT COIN: the runner, the first mission (PLAY 24 CHORDS), the progress kept across a reboot
 wait 4200
 expect mission 0
 expect metres <20

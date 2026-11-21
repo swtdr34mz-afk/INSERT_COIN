@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records)
- * Copyright (C) 2026 swtdr34mz (PIXEL RUN: the chip kits and grooves) */
-/* PIXEL RUN: the drum kits (8-bit and 16-bit consoles), the 20 built-in grooves, the bass sounds and riffs. Written by hand.
+ * Copyright (C) 2026 swtdr34mz (INSERT COIN: the chip kits and grooves) */
+/* INSERT COIN: the drum kits (8-bit and 16-bit consoles), the 20 built-in grooves, the bass sounds and riffs. Written by hand.
  * The DRUM STUDIO keeps 20 grooves of the player's own beside them (app.c, kept in the flash). */
 #pragma once
 

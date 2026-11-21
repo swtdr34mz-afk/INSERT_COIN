@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records)
- * Copyright (C) 2026 swtdr34mz (CHORD RUN: the sets, the melody, the runner, missions, the loop; PIXEL RUN: the chip sets,
+ * Copyright (C) 2026 swtdr34mz (CHORD RUN: the sets, the melody, the runner, missions, the loop; INSERT COIN: the chip sets,
  * the drum studio, the 8-bar loop, the pixel screens) */
-/* PIXEL RUN (CHORD RUN's chiptune sibling, based on BLOP by Obsimo): input, pages, the game sets, the melody, the drums and
+/* INSERT COIN (CHORD RUN's chiptune sibling, based on BLOP by Obsimo): input, pages, the game sets, the melody, the drums and
  * the DRUM STUDIO, the runner and its missions, the loop, the screen, settings. Part of the unity build (device/unity.c,
  * host/plat_host.c), after the platform: gfx.c and announce.c are in scope. The sound is dsp/engine.c.
  *

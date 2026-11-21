@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Obsimo (OSR Records)
-# The browser version of PIXEL RUN (from OSR-1) (the host simulator in WebAssembly) with Zig instead of Emscripten:
+# The browser version of INSERT COIN (from OSR-1) (the host simulator in WebAssembly) with Zig instead of Emscripten:
 #   pip install ziglang && tools/build_web.sh        ->  build/emu/app.wasm (+ fm1-base's page, worklet.js)
 # Needs the host build's generated headers first: python3 fm1-base/tools/build.py . --host
 set -e
@@ -14,7 +14,7 @@ $ZIG cc -target wasm32-wasi -mexec-model=reactor -O2 -ffp-contract=off -std=gnu9
     -Wl,--export-dynamic -Wl,-z,stack-size=1048576 -o build/emu/app.wasm $S/web/emu/emu_web.c dsp/engine.c
 # the page: fm1-base's (the FM-1 drawn as it is), with the app's name
 NAME="$(sed -n 's/^name *= *"\(.*\)"/\1/p' fm1.toml | head -1)"
-sed -e "s/{{NAME}}/$NAME/g" -e "s/{{ID}}/pixelrun/g" $S/web/emu/index.html > build/emu/index.html
+sed -e "s/{{NAME}}/$NAME/g" -e "s/{{ID}}/insertcoin/g" $S/web/emu/index.html > build/emu/index.html
 python3 - build/emu/index.html web/emu/phone.css <<'PY'
 import sys
 p, c = sys.argv[1], open(sys.argv[2]).read()

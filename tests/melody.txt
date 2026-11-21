@@ -1,4 +1,4 @@
-# PIXEL RUN: the melody follows the chord (FOLLOW CHORD): the leftmost white key is the chord's root, the next its scale
+# INSERT COIN: the melody follows the chord (FOLLOW CHORD): the leftmost white key is the chord's root, the next its scale
 wait 4200
 expect mfollow 0
 key b0 down

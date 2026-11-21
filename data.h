@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Obsimo (OSR Records)
- * Copyright (C) 2026 swtdr34mz (PIXEL RUN: the chip sounds, the game sets) */
-/* PIXEL RUN data: the sounds (chip waveforms and 16-bit FM), the chord rhythms, and the 20 sets: chord progressions in the
+ * Copyright (C) 2026 swtdr34mz (INSERT COIN: the chip sounds, the game sets) */
+/* INSERT COIN data: the sounds (chip waveforms and 16-bit FM), the chord rhythms, and the 20 sets: chord progressions in the
  * style of famous video game tunes, under names of their own (no game's or company's name). Written by hand. */
 #pragma once
 static const char *const FAMILY_NAME[4] = {"PULSE", "WAVE", "COMPUTER", "16-BIT FM"};

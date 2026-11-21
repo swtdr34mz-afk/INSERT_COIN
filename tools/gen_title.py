@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 swtdr34mz
-"""The intro's title, PIXEL over RUN in Press Start 2P (SIL OFL 1.1, assets/fonts): a 90s arcade title, each of the type's
+"""The intro's title, INSERT over COIN in Press Start 2P (SIL OFL 1.1, assets/fonts): a 90s arcade title, each of the type's
 pixels drawn 4 x 4, a black outline 2 px round it and a dark drop shadow; rasterised at build time into 4 bits a pixel
 (240 wide): 15 the face (app.c paints it in a gradient, row by row), 1 the outline, 2 the shadow, 0 nothing. And
 "by swtdr34mz" small in the same type. Run by the build (fm1.toml gen): tools/gen_title.py --out GEN/title_data.h"""
@@ -23,7 +23,7 @@ def line(text, scale):
     return im.resize((im.size[0] * scale, im.size[1] * scale), Image.NEAREST)
 
 
-a, b = line("PIXEL", SCALE), line("RUN", SCALE + 1)
+a, b = line("INSERT", SCALE), line("COIN", SCALE + 1)
 pad = OUTLINE + SHADOW
 h = a.size[1] + GAP + b.size[1] + 2 * pad
 face = Image.new("1", (240, h), 0)
