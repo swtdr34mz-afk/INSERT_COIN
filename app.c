@@ -39,7 +39,7 @@
 #include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x50525532u            /* "PRU2" */
+#define SET_MAGIC 0x50525533u            /* "PRU3": 11 sets */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -57,7 +57,8 @@ typedef struct {
     uint8_t aflow, carp, cbass, cwidth, cspread, crate;   /* arp flow, arp mode, bass note, width, spread, arp rate */
     uint8_t aswing, clevel;                               /* arp swing, the chords' level */
     uint8_t dtrack, dkit, dswing, dslot;                  /* the drum studio: its track, the groove's kit and swing, the slot */
-    uint8_t mfollow;                                      /* the melody follows: 0 the chord (from its root), 1 the scale */
+    uint8_t mfollow;                                      /* the melody follows: 0 SMART (its keys stay, the notes fit the chord),
+                                                             1 ROOT (the chord's root on the leftmost key) */
     uint8_t rsv[3];
 } settings_t;
 static settings_t set;
@@ -246,10 +247,11 @@ static uint16_t mel_scale(int slot)
     return sc;
 }
 /* the melody: white key number w -> a MIDI pitch.
- * FOLLOW CHORD (the start): the keys play the chord's scale (mel_scale) from the chord's root: the leftmost key is always
- * the root of the chord that plays, the next ones the scale's notes above it, so every chord change moves the keys with it
- * (and a note held over the change moves too).
- * FOLLOW SCALE: each key keeps the set's scale from its tonic; a note that is not in the chord's scale moves a semitone. */
+ * FOLLOW SMART (the start): each key has its own note in the set's scale, from its tonic (the leftmost key), and that note
+ * fits the chord that plays: where it is not in the chord's scale (mel_scale: the set's scale with the chord's own notes in
+ * it) it moves one semitone, to the chord's note if one is there. So a chord change never makes a key jump: at most a
+ * semitone (a note held over the change moves with it).
+ * FOLLOW ROOT: the chord's root on the leftmost key, its scale above it: every chord change moves all the keys. */
 static float mel_pitch(int w)
 {
     int n = grid_n[set.grid], slot = last_slot, base, deg, p, pc, i, np = 0, root;
@@ -260,7 +262,7 @@ static float mel_pitch(int w)
     ct = chord_tones(slot);
     base = 60 + set.key - (set.key >= 6 ? 12 : 0) + set.octave * 12 + ((int)set.moct - 2) * 12;   /* the set's tonic */
     deg = w < 0 ? 0 : w;
-    if (set.mfollow == 0) {
+    if (set.mfollow == 1) {
         root = (set.key + grid_w[set.grid][slot].semi) % 12;
         for (i = 0; i < 12; i++) if ((sc >> ((root + i) % 12)) & 1u) pcs[np++] = (int8_t)i;   /* the scale from the root */
         if (np < 1) { pcs[0] = 0; np = 1; }
@@ -708,7 +710,7 @@ static const char *const SPREAD_NAME[NSPREAD] = {"DIVERGE", "ALTERNATE", "DIVERG
 static const char *const RATE_NAME[NARP_RATE] = {"1/4", "1/4 T", "1/8", "1/8 T", "1/16", "1/16 T", "1/32", "FAST", "CHIP"};
 static const char *const MOCT_NAME[5] = {"-2", "-1", "0", "+1", "+2"};
 static const char *const ASSIST_NAME[3] = {"OFF", "CHORD", "GUIDE"};
-static const char *const FOLLOW_NAME[2] = {"CHORD", "SCALE"};
+static const char *const FOLLOW_NAME[2] = {"SMART", "ROOT"};
 
 enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST };
 enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL, G_MELODY, G_CFX, G_STYLE, G_GROOVE_ED };

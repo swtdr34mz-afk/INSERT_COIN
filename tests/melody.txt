@@ -1,32 +1,34 @@
-# INSERT COIN: the melody follows the chord (FOLLOW CHORD): the leftmost white key is the chord's root, the next its scale
+# INSERT COIN: the melody fits the chord (FOLLOW SMART): each key keeps its note in the set's scale and moves a semitone at
+# most when the chord asks; TOXIC PLANT (G minor): over Am (its E) the F key plays E
 wait 4200
 expect mfollow 0
 key b0 down
 wait 50
-expect mel0 60
-expect mel1 62
-expect mel2 64
+expect mel0 55
+expect mel1 57
+expect mel2 58
+expect mel6 65
 key b0 up
 wait 30
-key b1 down
+key b5 down
 wait 50
-expect mel0 65
-expect mel2 69
-key b1 up
+expect mel6 64
+expect mel0 55
+key b5 up
 wait 30
-key b3 down
+key b0 down
 wait 50
-expect mel0 57
-key b3 up
+expect mel6 65
+key b0 up
 wait 30
-# a held melody note moves with the chord
+# a held note moves with the chord (a semitone)
 key b0 down
 wait 30
 key b0 up
-key w0 down
+key w6 down
 wait 100
-key b1 down
+key b5 down
 wait 30
-key b1 up
+key b5 up
 wait 100
-key w0 up
+key w6 up

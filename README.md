@@ -15,16 +15,15 @@ fires on every key you play.
 
 ## What it does
 
-- **Sets:** 20 levels, each a chord progression in the style of a famous video game tune, under a name of its own:
-  grassland, underground, sky, speed zone, factory, hero field, block world, robot fortress, first route, lava level,
-  boss castle, soldier base, beach race, crystal cave, time hall, underwater, candy land, alien planet, neon street,
-  rainbow race. A set's chords sit on the **black keys** (left to right). Each set brings its own sound, chord rhythm,
-  scale, tempo, bass riff, drum groove, effects and stage; three of them the chip arpeggio.
-- **Melody:** the **white keys** follow the chord: FOLLOW CHORD (MELODY page) puts the chord's root on the leftmost white
-  key and its scale above it, so every chord change moves the keys (a held note moves with it). FOLLOW SCALE keeps each
-  key on the set's scale. Each set has its own scale (major, minor, harmonic minor, dorian, mixolydian, phrygian,
-  phrygian dominant, lydian, pentatonics, blues). ASSIST (MELODY 2) lights up the chord's notes, or GUIDE: a melody that
-  lights up key by key (BLOCK DROP: Korobeiniki, the folk song the falling-blocks game made famous).
+- **Sets:** 11 levels, each a chord progression in the style of a famous video game tune, under a name of its own:
+  toxic plant, hero field, block drop, robot fortress, magma rush, night castle, coast drive, deep reef, alien caves,
+  dream greens, star road. A set's chords sit on the **black keys** (left to right). Each set brings its own sound, chord
+  rhythm, scale, tempo, bass riff, drum groove and effects; three of them the chip arpeggio.
+- **Melody:** the **white keys** follow the chord: FOLLOW SMART (MELODY page, the start) keeps each key on its note of
+  the set's scale and moves it a semitone where the chord asks (to the chord's note), so a chord change never makes the
+  melody jump (a held note moves with it); FOLLOW ROOT puts the chord's root on the leftmost key. Each set has its own
+  scale (minor, mixolydian, harmonic minor, phrygian, major, major pentatonic). ASSIST (MELODY 2) lights up the chord's
+  notes, or GUIDE: a melody that lights up key by key (BLOCK DROP: Korobeiniki, the folk song the falling-blocks game made famous).
 - **Sounds:** 17 chip sounds: pulse waves (12.5, 25 and 50 %), a sweeping PWM, a handheld's 4-bit wave channel, the 8-bit
   consoles' stepped triangle, a home computer's stepped saw through its filter, a laser lead, a coin blip, a crushed pad,
   and the 16-bit consoles' FM (brass, bell, e-piano, strings). The bass has the chip TRIANGLE and PULSE too.
@@ -63,7 +62,7 @@ fires on every key you play.
 | ARP | The arpeggiator: mode, rate (1/4 .. 1/32, triplets, FAST, CHIP), flow, swing |
 | ENV | Groove: BPM, swing, density, sidechain |
 | LFO | Bass: sound, level, riff, filter |
-| EDIT | Melody: FOLLOW (chord / scale), level, space, preset. EDIT again: MELODY 2: glide, octave, vibrato, ASSIST |
+| EDIT | Melody: FOLLOW (smart / root), level, space, preset. EDIT again: MELODY 2: glide, octave, vibrato, ASSIST |
 | GLO | Drums: style (the 20 grooves, then USER 1 .. USER 20), kick, hats, snare. **GLO again: the DRUM STUDIO** |
 | HOME | Back to the main page. Held: the title and your progress |
 | REC | The loop: ready → the first chord records up to 8 bars (REC closes it) → it plays round. Held 1 s: cleared |

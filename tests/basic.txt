@@ -4,12 +4,12 @@ wait 600
 shot intro.png
 wait 3400
 shot boot.png
-# first start: chip drums on, the first set's own rhythm (STACCATO), no arpeggio
+# first start: chip drums on, the first set's own rhythm (EIGHTHS), no arpeggio
 expect page 0
 expect grid 0
-expect rhythm 9
+expect rhythm 2
 expect carp 0
-expect bsound 7
+expect bsound 3
 expect drums 70
 # a chord: latched (FULL), the drums and the chip arpeggio run
 key b0 down
@@ -38,7 +38,7 @@ expect active 0
 turn SELECT 3
 wait 100
 expect grid 3
-expect sound 13
+expect sound 5
 key b0 down
 wait 30
 key b0 up
@@ -53,7 +53,7 @@ key b0 up
 wait 400
 turn SELECT 16
 wait 100
-expect grid 19
+expect grid 8
 key b2 down
 wait 30
 key b2 up
@@ -94,7 +94,7 @@ wait 50
 expect page 6
 turn K1 4
 wait 300
-expect dpat 18
+expect dpat 16
 shot drums.png
 # GLO again: the DRUM STUDIO; the keys are steps now (no chord), PLAY the drums alone
 tap GLO
