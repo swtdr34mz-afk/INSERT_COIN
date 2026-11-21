@@ -1,0 +1,32 @@
+# PIXEL RUN: the melody follows the chord (FOLLOW CHORD): the leftmost white key is the chord's root, the next its scale
+wait 4200
+expect mfollow 0
+key b0 down
+wait 50
+expect mel0 60
+expect mel1 62
+expect mel2 64
+key b0 up
+wait 30
+key b1 down
+wait 50
+expect mel0 65
+expect mel2 69
+key b1 up
+wait 30
+key b3 down
+wait 50
+expect mel0 57
+key b3 up
+wait 30
+# a held melody note moves with the chord
+key b0 down
+wait 30
+key b0 up
+key w0 down
+wait 100
+key b1 down
+wait 30
+key b1 up
+wait 100
+key w0 up

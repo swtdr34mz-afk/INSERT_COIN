@@ -5,26 +5,28 @@
  * The DRUM STUDIO keeps 20 grooves of the player's own beside them (app.c, kept in the flash). */
 #pragma once
 
-/* the kits: kick (base Hz, sweep Hz, pitch drop s, body s, drive, hold s, click), hi-hat (tone, closed s, open s, metal),
- * perc (Hz, Hz, decay s, click), snare (body Hz, body 0..1, decay s, bright 0..1, clap 0 / 1), space (reverb), chip */
+/* the kits: the Game Boy's channels as its games and trackers made drums of them (dsp/engine.h kit_t):
+ * kick (wave channel: from Hz, to Hz, drop s, length s, volume, envelope n, click), snare (noise: clock Hz, 7-bit, volume,
+ * envelope n, length s, square body Hz), hats (noise: clock, 7-bit, volume, envelope n, closed s, open s), perc (pulse: Hz,
+ * duty, volume, envelope n, length s), space. An envelope n: the 4-bit volume one step down every n/64 s */
 #define NKIT 5
-static const char *const KIT_NAME[NKIT] = {"8-BIT", "HANDHELD", "16-BIT", "ROBOT", "ARCADE"};
+static const char *const KIT_NAME[NKIT] = {"POCKET", "BRICK", "TRACKER", "GRITTY", "TINY"};
 static const kit_t KIT[NKIT] = {
-    /* 8-BIT: a triangle kick that drops, the long noise for hats and snare, square blips */
-    {50.0f, 240.0f, 0.025f, 0.12f, 1.0f, 0.010f, 0.0f, 0.80f, 0.030f, 0.15f, 0.0f, 880.0f, 1320.0f, 0.040f, 0.20f,
-     180.0f, 0.35f, 0.12f, 0.45f, 0.0f, 0.08f, 1.0f},
-    /* HANDHELD: brighter and shorter, a thin kick */
-    {55.0f, 300.0f, 0.018f, 0.09f, 1.0f, 0.008f, 0.0f, 1.00f, 0.020f, 0.10f, 0.0f, 1568.0f, 2093.0f, 0.030f, 0.10f,
-     220.0f, 0.20f, 0.09f, 0.70f, 0.0f, 0.05f, 1.0f},
-    /* 16-BIT: the 16-bit consoles' punchier drums (their sampled kits): a driven kick, a crisp snare, a little room */
-    {52.0f, 170.0f, 0.022f, 0.16f, 3.5f, 0.020f, 0.55f, 0.75f, 0.025f, 0.12f, 0.50f, 1700.0f, 500.0f, 0.010f, 0.30f,
-     210.0f, 0.40f, 0.12f, 0.75f, 0.0f, 0.15f, 0.0f},
-    /* ROBOT: the noise's short, tonal mode (metallic hats), a deep long kick */
-    {45.0f, 200.0f, 0.040f, 0.35f, 1.0f, 0.040f, 0.0f, 0.60f, 0.025f, 0.12f, 1.0f, 660.0f, 990.0f, 0.050f, 0.40f,
-     160.0f, 0.30f, 0.10f, 0.35f, 0.0f, 0.10f, 1.0f},
-    /* ARCADE: a big sweeping kick, a long noise snare, a big room */
-    {45.0f, 400.0f, 0.030f, 0.25f, 1.0f, 0.020f, 0.0f, 0.90f, 0.030f, 0.20f, 0.0f, 1047.0f, 1568.0f, 0.060f, 0.30f,
-     150.0f, 0.40f, 0.18f, 0.55f, 0.0f, 0.22f, 1.0f},
+    /* POCKET: the handheld's own games: a short sine kick, a bright hiss snare, thin hats */
+    {220.0f, 45.0f, 0.035f, 0.16f, 15.0f, 2.0f, 0.25f,  16384.0f, 0.0f, 13.0f, 1.0f, 0.22f, 0.0f,
+     131072.0f, 0.0f, 8.0f, 1.0f, 0.045f, 0.22f,  1047.0f, 0.25f, 10.0f, 1.0f, 0.07f,  0.0f},
+    /* BRICK: heavier, the snare with a square body, a longer kick */
+    {180.0f, 40.0f, 0.050f, 0.22f, 15.0f, 3.0f, 0.35f,  8192.0f, 0.0f, 15.0f, 2.0f, 0.28f, 185.0f,
+     65536.0f, 0.0f, 10.0f, 1.0f, 0.040f, 0.28f,  523.0f, 0.5f, 11.0f, 1.0f, 0.08f,  0.02f},
+    /* TRACKER: as the music trackers on the handheld: a punchy clicky kick, a crisp snare, metallic 7-bit hats */
+    {300.0f, 48.0f, 0.025f, 0.14f, 15.0f, 1.0f, 0.50f,  32768.0f, 0.0f, 15.0f, 1.0f, 0.14f, 220.0f,
+     262144.0f, 1.0f, 7.0f, 1.0f, 0.030f, 0.18f,  1568.0f, 0.125f, 9.0f, 1.0f, 0.05f,  0.0f},
+    /* GRITTY: low clocks, the rumbly noise of the old games' explosions */
+    {150.0f, 35.0f, 0.060f, 0.25f, 15.0f, 4.0f, 0.60f,  4096.0f, 0.0f, 15.0f, 2.0f, 0.30f, 0.0f,
+     32768.0f, 0.0f, 9.0f, 1.0f, 0.060f, 0.30f,  880.0f, 0.5f, 10.0f, 2.0f, 0.09f,  0.0f},
+    /* TINY: soft and short, quiet hats */
+    {330.0f, 60.0f, 0.020f, 0.10f, 12.0f, 1.0f, 0.10f,  24576.0f, 0.0f, 10.0f, 1.0f, 0.12f, 0.0f,
+     196608.0f, 0.0f, 5.0f, 1.0f, 0.025f, 0.15f,  2093.0f, 0.25f, 8.0f, 1.0f, 0.04f,  0.0f},
 };
 
 /* the built-in grooves: 16 steps, X accent, x soft, . rest; hi-hat row: o open, 2 / 3 / 4 a roll of that many hits; their kit
@@ -34,7 +36,7 @@ static const kit_t KIT[NKIT] = {
 #define NDRUM (NGROOVE + NUSER)          /* STYLE: the 20 grooves, then the 20 user slots */
 static const char *const GROOVE_NAME[NGROOVE] = {
     "PLATFORMER", "OVERWORLD", "SHUFFLE", "CASTLE", "BOSS FIGHT", "RACING", "DUNGEON", "SHOOTER", "PUZZLE", "TITLE",
-    "VICTORY", "UNDERWATER", "SPACE", "CHIP HOUSE", "CHIP TRAP", "CHIP BREAKS", "CHIP FUNK", "CHIP HIPHOP", "GALLOP",
+    "BOUNCE", "UNDERWATER", "SPACE", "CHIP HOUSE", "TURBO", "CHIP BREAKS", "CHIP FUNK", "CHIP HIPHOP", "GALLOP",
     "CREDITS"};
 static const struct { const char *k, *h, *s, *r; uint8_t kit, swing; } GROOVE_DEF[NGROOVE] = {
     /* kick                hi-hat              snare               perc                kit swing */
@@ -48,11 +50,11 @@ static const struct { const char *k, *h, *s, *r; uint8_t kit, swing; } GROOVE_DE
     {"X.X...X.X.X...X.", "x3x.x3x.x3x.x3x.", "....X.......X...", "................", 4, 0},    /* shooter */
     {"X.......X.......", "x.x.x.x.x.x.x.x.", "....x.......x...", "x...x...x...x...", 1, 0},    /* puzzle */
     {"X...............", "....x.......x...", "........X.......", "................", 4, 0},    /* title screen */
-    {"X.X.X.X.X.......", "xxxxxxxxxx......", "X.X.X.X.X.......", "........X.......", 0, 0},    /* victory fanfare */
+    {"X.....X.X.......", "x.x.x.x.x.x.x.x.", "....X.......X...", "x...x...x...x...", 0, 0},    /* bounce: a candy land's hop */
     {"X.........x.....", "..o.......o.....", "........x.......", "......x.......x.", 1, 30},   /* underwater */
     {"X......X..X.....", "x.x.x.x.x.x.x.x.", "....X.......X...", ".x...x...x...x..", 3, 0},    /* space */
     {"X...X...X...X...", "..o...o...o...o.", "....X.......X...", "...x......x...x.", 2, 0},    /* chip house */
-    {"X.......X.......", "x.x.x.x3x.x.x.4.", "....X.......X...", "................", 3, 0},    /* chip trap */
+    {"X...X...X...X...", "xxxxxxxxxxxxxxxx", "....X.......X...", "..x...x...x...x.", 2, 0},    /* turbo: a race at full speed */
     {"X.........X.....", "x.x.x.x.x.x.x.x.", "....X..x.x..X...", "................", 4, 0},    /* chip breaks */
     {"X..x..X...X..x..", "x.xxx.xxx.xxx.xx", "....X..x....X...", "................", 0, 35},   /* chip funk */
     {"X......X..X.....", "x.x.x.x.x.x.x.x.", "....X.......X...", "................", 1, 45},   /* chip hip hop */

@@ -45,7 +45,7 @@ static float *const ap_buf[4] = {ap_buf0, ap_buf1, ap_buf2, ap_buf3};
 
 /* ------------------------------------------------------------------ command queue (main loop -> render) --- */
 enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_GROOVE, CMD_DRUMS, CMD_BASS, CMD_MUFFLE,
-       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW };
+       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW, CMD_LBEND };
 typedef struct {
     uint8_t t;
     union {
@@ -172,8 +172,19 @@ static struct {
      * the chip drums' noise (two shift registers, each with its clock) */
     float swp, ld_swp, pwm_ph, crush, cr_hold_l, cr_hold_r, cr_left;
     uint8_t preview;
-    uint16_t lfsr1, lfsr2;
-    float nz1_ph, nz2_ph, nz1, nz2;
+    /* the Game Boy drums: the wave channel's kick, the noise channel (snare and hats share it), the pulse channel's perc;
+     * volumes are 4-bit (0..15), each envelope a counter in samples */
+    float gk_ph, gk_f, gk_f1, gk_fk, gk_len, gk_g, gk_click;
+    int gk_vol, gk_cnt, gk_per;
+    uint16_t gn_lfsr;
+    uint8_t gn_w7;
+    float gn_out, gn_ph, gn_inc, gn_len, gn_g, gn_tph, gn_tinc;
+    int gn_vol, gn_cnt, gn_per, gn_tvol, gn_tcnt;
+    float gp_ph, gp_inc, gp_duty, gp_len, gp_g;
+    int gp_vol, gp_cnt, gp_per;
+    float g_dc;
+    int g_roll;
+    float g_roll_left, g_roll_len, g_roll_g;
 } E;
 
 static inline float mtof(float m) { return 440.0f * fm_exp2f((m - 69.0f) * (1.0f / 12.0f)); }
@@ -203,6 +214,8 @@ static const uint8_t WAVE_T[32] = {8, 11, 13, 14, 15, 15, 14, 13, 12, 11, 10, 10
                                    7, 7, 6, 6, 5, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 5};     /* warm: a rounded saw-sine */
 static const uint8_t VOICE_T[32] = {15, 15, 14, 12, 9, 6, 4, 3, 3, 4, 7, 10, 12, 13, 12, 9,
                                     5, 2, 0, 0, 1, 3, 5, 6, 6, 5, 4, 4, 5, 7, 10, 13};     /* a nasal, vowel-like one */
+static const uint8_t KWAVE[32] = {8, 9, 11, 12, 13, 14, 15, 15, 15, 15, 15, 14, 13, 12, 11, 9,
+                                  7, 6, 4, 3, 2, 1, 0, 0, 0, 0, 0, 1, 2, 3, 4, 6};       /* the kick's 4-bit sine */
 static inline float tri4(float ph)        /* the 8-bit consoles' triangle: 16 steps up, 16 down */
 {
     int k = (int)(ph * 32.0f) & 31;
@@ -251,6 +264,7 @@ void eng_lead_params(float cut_hz, float level, float reverb, float delay)
     push(&c);
 }
 void eng_lead(float m) { cmd_t c; c.t = CMD_LEAD; c.u.ld.m = m; push(&c); }
+void eng_lead_bend(float m) { cmd_t c; c.t = CMD_LBEND; c.u.ld.m = m; push(&c); }
 void eng_chordfx(int arp, int rate, float flow, float swing, float width, int spread, float level)
 {
     cmd_t c;
@@ -554,38 +568,56 @@ static void arp_fire(float period)
     E.arp_fk = 1.0f / fm_maxf(1.0f, tau);
 }
 
+/* the noise channel struck: its clock (Hz), 7- or 15-bit register, 4-bit volume, envelope (n / 64 s a step), length (s),
+ * level, and a square body under it (Hz, 0 none: a snare's) */
+static void gb_noise(float clk, int w7, int vol, float env, float len, float g, float tone)
+{
+    E.gn_inc = fm_minf(8.0f, clk / SR);
+    E.gn_w7 = (uint8_t)w7;
+    E.gn_vol = vol > 15 ? 15 : vol;
+    E.gn_per = (int)(env * SR / 64.0f); E.gn_cnt = E.gn_per;
+    E.gn_len = len * SR;
+    E.gn_g = g;
+    E.gn_tinc = tone / SR; E.gn_tph = 0.0f; E.gn_tvol = tone > 0.0f ? 12 : 0; E.gn_tcnt = (int)(SR / 64.0f);
+}
+
 static void on_step(void)
 {
     int i = E.step, kick = 0;
     if (i == 0) E.bar++;
     float sl = step_len(i);
     if (E.drums_on && ((E.active && !E.rh.hold) || E.preview)) {   /* the drums play with a rhythm only (or the studio's preview) */
-        if (E.dr.k[i] > 0.0f) {
-            E.k_tail = E.k_last; E.k_ph = 0.0f; E.k_amp = 1.0f; E.k_pitch = 1.0f;
-            E.k_hold = E.dr.kit.k_hold * SR; E.k_cl = 1.0f; E.k_clph = 0.0f;
-            E.k_gain = E.dr.k[i] * E.dk;
+        const kit_t *kt = &E.dr.kit;
+        if (E.dr.k[i] > 0.0f) {                     /* the kick: the wave channel from the top */
+            E.gk_ph = 0.0f; E.gk_f = kt->k_f0; E.gk_f1 = kt->k_f1;
+            E.gk_fk = fm_expf(-1.0f / (fm_maxf(0.003f, kt->k_drop) * SR));
+            E.gk_vol = (int)kt->k_vol; E.gk_per = (int)(kt->k_env * SR / 64.0f); E.gk_cnt = E.gk_per;
+            E.gk_len = kt->k_len * SR; E.gk_click = kt->k_click;
+            E.gk_g = E.dr.k[i] * E.dk;
             E.duck_atk = 1;
             kick = 1;
         }
-        if (E.dr.h[i] > 0.0f) {
+        if (E.dr.h[i] > 0.0f) {                     /* a hat: the noise channel, high, short (an open one longer) */
             int rl = E.dr.roll[i];
-            E.h_env = 1.0f;
-            E.h_gain = E.dr.h[i] * E.dh * (0.85f + 0.15f * rndu());
-            E.h_dec = fm_expf(-1.0f / (fm_maxf(0.003f, E.dr.open[i] ? E.dr.kit.h_open : E.dr.kit.h_closed) * SR));
-            E.h_roll = 0;
+            gb_noise(kt->h_clk, kt->h_w7 > 0.5f, (int)kt->h_vol, kt->h_env, E.dr.open[i] ? kt->o_len : kt->h_len,
+                     E.dr.h[i] * E.dh, 0.0f);
+            E.g_roll = 0;
             if (rl > 1) {                               /* a roll: the other hits of the step, evenly in it */
-                E.h_roll = rl - 1;
-                E.h_roll_len = sl / (float)rl;
-                E.h_roll_left = E.h_roll_len;
-                E.h_roll_g = E.h_gain;
+                E.g_roll = rl - 1;
+                E.g_roll_len = sl / (float)rl;
+                E.g_roll_left = E.g_roll_len;
+                E.g_roll_g = E.dr.h[i] * E.dh;
             }
         }
-        if (E.dr.s[i] > 0.0f) {
-            E.s_env = 1.0f; E.s_tenv = 1.0f; E.s_gain = E.dr.s[i] * E.dr_l; E.s_ph = 0.0f; E.s_ph2 = 0.25f;
-            E.s_clapn = E.dr.kit.s_clap > 0.5f ? 2 : 0;     /* a clap: two more bursts, 11 ms apart */
-            E.s_clapt = 0.011f * SR;
+        if (E.dr.s[i] > 0.0f) {                     /* the snare: the noise channel again (it cuts the hat: one channel) */
+            gb_noise(kt->s_clk, kt->s_w7 > 0.5f, (int)kt->s_vol, kt->s_env, kt->s_len, E.dr.s[i] * E.dr_l, kt->s_tone);
+            E.g_roll = 0;
         }
-        if (E.dr.r[i] > 0.0f) { E.r_env = 1.0f; E.r_gain = E.dr.r[i] * E.dr_l; E.r_ph1 = E.r_ph2 = 0.0f; }
+        if (E.dr.r[i] > 0.0f) {                     /* perc: the pulse channel's blip */
+            E.gp_ph = 0.0f; E.gp_inc = kt->p_f / SR; E.gp_duty = kt->p_duty;
+            E.gp_vol = (int)kt->p_vol; E.gp_per = (int)(kt->p_env * SR / 64.0f); E.gp_cnt = E.gp_per;
+            E.gp_len = kt->p_len * SR; E.gp_g = E.dr.r[i] * E.dr_l;
+        }
     }
     if (E.active && E.arp) {                         /* the arpeggiator in place of the rhythm's hits: lined up at each bar */
         if (i == 0) {
@@ -740,6 +772,9 @@ static void run_commands(void)
             }
             break;
         case CMD_LMOD: E.lglide = c->u.lm.glide; E.lvib = c->u.lm.vib; break;
+        case CMD_LBEND:                         /* the chord changed under a held melody note: it moves with it */
+            if (E.ld_st && E.ld_st < 3) { E.ld_tgt = c->u.ld.m; if (E.lglide <= 0.005f) E.ld_m = E.ld_tgt; }
+            break;
         case CMD_CFX: {
             uint8_t was = E.arp;
             E.arp = c->u.cf.arp < NARP ? c->u.cf.arp : 0; E.arate = c->u.cf.rate < NARP_RATE ? c->u.cf.rate : ARP_R_16;
@@ -793,7 +828,7 @@ void eng_init(void)
     }
     E.bm = E.btarget = 36.0f;
     E.rng = 0x1234567u;
-    E.lfsr1 = 1u; E.lfsr2 = 0x4321u;
+    E.gn_lfsr = 0x7FFFu;
     E.cut = 3800.0f; E.q = 1.0f; E.bpm = 118.0f;
     E.rh.hold = 1;
     E.fade_len = 0.004f * SR;
@@ -801,9 +836,6 @@ void eng_init(void)
     E.gatem = 1.0f;
     for (i = 0; i < 4; i++) E.mv[i] = MIDI_NONE;
     E.mb = MIDI_NONE;
-    E.dr.kit.k_base = 62.0f; E.dr.kit.k_sweep = 95.0f; E.dr.kit.k_pdec = 0.018f; E.dr.kit.k_dec = 0.052f;
-    E.dr.kit.k_drive = 1.6f; E.dr.kit.h_tone = 0.5f; E.dr.kit.h_closed = 0.016f; E.dr.kit.h_open = 0.09f;
-    E.dr.kit.r_f1 = 1720.0f; E.dr.kit.r_f2 = 480.0f; E.dr.kit.r_dec = 0.008f; E.dr.kit.r_noise = 0.25f;
     E.bsound = BASS_ROND; E.blevel = 0.6f; E.bcut = 600.0f;
     for (i = 0; i < 4; i++) { E.sg[i] = 1.0f; E.vg[i] = 1.0f; }
     E.vmask = 0x0Fu; E.arate = ARP_R_16; E.width = 0.5f; E.clev = 1.0f; E.aflow = 0.4f; E.arp_fk = 0.02f;
@@ -842,25 +874,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
         float iC = fm_expf(-1.0f / (fm_maxf(0.01f, p->idec) * SR * 0.33f));
         const float duckC = 0.99974808f;          /* exp(-1 / (0.09 s)) */
         const float duckA = 0.00565385f;          /* 1 - exp(-1 / (4 ms)) */
-        const float tailC = 0.99247253f;          /* exp(-1 / (3 ms)) */
         const kit_t *kt = &E.dr.kit;
-        const float kDecay = fm_expf(-1.0f / (fm_maxf(0.01f, kt->k_dec) * SR));    /* the kick's body */
-        const float kPdecay = fm_expf(-1.0f / (fm_maxf(0.002f, kt->k_pdec) * SR)); /* its pitch drop */
-        const float hpC = 0.12f + 0.43f * kt->h_tone;                                  /* the hat's high-pass, two stages (~0.9 .. 5.5 kHz) */
-        const float kClick = 0.9905f;                                                  /* exp(-1 / (2.4 ms)) */
-        const float hmul = (1.0f + 1.1f * kt->h_tone) / SR;
-        const float hm_inc[6] = {205.3f * hmul, 304.4f * hmul, 369.6f * hmul, 522.7f * hmul, 540.0f * hmul, 800.0f * hmul};
-        const float hmet = kt->h_metal;
-        const float rDec = fm_expf(-1.0f / (fm_maxf(0.002f, kt->r_dec) * SR));
-        const float sDec = fm_expf(-1.0f / (fm_maxf(0.01f, kt->s_dec) * SR));          /* the snare's noise */
-        const float sTdec = fm_expf(-1.0f / (fm_maxf(0.01f, kt->s_dec * 0.45f) * SR));   /* its body, shorter */
-        const float sBurst = fm_expf(-1.0f / (0.0045f * SR));                            /* a clap's first bursts */
-        /* the snare's noise filter (state-variable): a snare high and open, a clap a narrower band around 1 kHz */
-        const float s_fc = kt->s_clap > 0.5f ? 850.0f + 900.0f * kt->s_snap : 1400.0f + 4600.0f * kt->s_snap;
-        const float s_k = kt->s_clap > 0.5f ? 0.45f : 1.1f;
-        const float s_g = fm_tanf(3.14159265f * s_fc / SR);
-        const float s_a1 = 1.0f / (1.0f + s_g * (s_g + s_k)), s_a2 = s_g * s_a1, s_a3 = s_g * s_a2;
-        const float sAmp = kt->s_clap > 0.5f ? 1.1f : 0.95f;                          /* a clap's bursts lose a bit: louder */
         const float dspace = kt->space;
         const int eng = p->engine;
         const float lvl = p->level * (eng == ENGINE_FM ? 0.16f : eng == ENGINE_PLUCK ? 0.30f : 0.11f) * E.clev;
@@ -875,10 +889,6 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
         const int leng = E.lp.engine;
         const float lgain = leng == ENGINE_FM ? 0.256f : leng == ENGINE_PLUCK ? 0.7f : 0.176f;
         const float rv_damp = 0.575f;             /* ~6 kHz in the reverb's loop */
-        const int chip = kt->chip > 0.5f;           /* the 8-bit console's drums */
-        const float nz1_inc = fm_minf(1.0f, (5000.0f + 39000.0f * kt->h_tone) / SR);   /* the hat's noise clock */
-        const float nz2_inc = fm_minf(1.0f, (3000.0f + 22000.0f * kt->s_snap) / SR);   /* the snare's */
-        const int nz1_short = kt->h_metal > 0.5f;
         const float st_c = p->steps, st_l = E.lp.steps;
         const float swC = fm_expf(-(float)CHUNK / (fm_maxf(0.004f, p->sweep_t) * SR * 0.33f));
         const float lswC = fm_expf(-(float)CHUNK / (fm_maxf(0.004f, E.lp.sweep_t) * SR * 0.33f));
@@ -1176,103 +1186,64 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                 y = (sum * lvl * E.e * fade) + bass * 0.2f;
                 yr = (sumr * lvl * E.e * fade) + bass * 0.2f;
                 if (E.trem > 0.001f) { float tg = 1.0f - E.trem * (0.5f + 0.5f * fm_sin_turns(E.tr_ph)); y *= tg; yr *= tg; }
-                /* kick: a sine that drops in pitch, held at full level a moment (punch, an 808's boom), driven; and the
-                 * beater's click on top */
-                if (E.k_amp > 1e-4f) {
-                    float f = kt->k_base + kt->k_sweep * E.k_pitch;
-                    E.k_ph += f / SR;
-                    if (E.k_ph >= 1.0f) E.k_ph -= 1.0f;
-                    kv = chip ? tri4(E.k_ph) * E.k_amp * 1.1f            /* chip: the stepped triangle, as it drops */
-                              : fm_tanhf(fm_sin_turns(E.k_ph) * E.k_amp * kt->k_drive) / fm_tanhf(kt->k_drive);
-                    if (E.k_cl > 1e-3f) {
-                        E.k_clph += 3100.0f / SR; if (E.k_clph >= 1.0f) E.k_clph -= 1.0f;
-                        kv += (fm_sin_turns(E.k_clph) * 0.55f + rnd() * 0.45f) * E.k_cl * kt->k_click * 0.5f;
-                        E.k_cl *= kClick;
-                    }
-                    if (E.k_hold > 0.0f) E.k_hold -= 1.0f;
-                    else E.k_amp *= kDecay;
-                    E.k_pitch *= kPdecay;
-                }
-                E.k_tail *= tailC;
-                E.k_last = kv;
-                kv = (kv + E.k_tail) * 0.5f * E.k_gain;
-                if (chip) {                          /* the chip drums' noise: two shift registers, each on its clock */
-                    E.nz1_ph += nz1_inc;
-                    if (E.nz1_ph >= 1.0f) {
-                        uint16_t b = (uint16_t)((E.lfsr1 ^ (E.lfsr1 >> (nz1_short ? 6 : 1))) & 1u);
-                        E.lfsr1 = (uint16_t)((E.lfsr1 >> 1) | (b << 14)); E.nz1_ph -= 1.0f;
-                        E.nz1 = (E.lfsr1 & 1u) ? 1.0f : -1.0f;
-                    }
-                    E.nz2_ph += nz2_inc;
-                    if (E.nz2_ph >= 1.0f) {
-                        uint16_t b = (uint16_t)((E.lfsr2 ^ (E.lfsr2 >> 1)) & 1u);
-                        E.lfsr2 = (uint16_t)((E.lfsr2 >> 1) | (b << 14)); E.nz2_ph -= 1.0f;
-                        E.nz2 = (E.lfsr2 & 1u) ? 1.0f : -1.0f;
-                    }
-                }
-                /* hi-hat: high-passed noise; rim: two short tones and a click */
+                /* the Game Boy drums: three channels, each its 4-bit volume stepping down, no polish: a stepped sine kick
+                 * on the wave channel, the noise channel's shift register (snare or hat, one at a time), the pulse channel's
+                 * blip; summed, with only the console's own DC blocker after them */
                 {
-                    float hv = 0.0f, rv = 0.0f;
-                    if (E.h_env > 1e-4f) {           /* hi-hat: metal (six square waves) and noise, high-passed twice */
-                        float x = 0.0f, hp, hp2;
-                        int j;
-                        if (chip) x = E.nz1 * 0.8f;        /* chip: the shift register's noise (held between clocks) */
-                        else if (hmet > 0.01f) {
-                            for (j = 0; j < 6; j++) {
-                                E.h_mph[j] += hm_inc[j]; if (E.h_mph[j] >= 1.0f) E.h_mph[j] -= 1.0f;
-                                x += E.h_mph[j] < 0.5f ? 1.0f : -1.0f;
-                            }
-                            x *= 0.5f * hmet;
+                    float gv = 0.0f, nv = 0.0f;
+                    if (E.gk_vol > 0 && E.gk_len > 0.0f) {          /* kick */
+                        float f = E.gk_f;
+                        E.gk_ph += f / SR; if (E.gk_ph >= 1.0f) E.gk_ph -= 1.0f;
+                        E.gk_f = E.gk_f1 + (E.gk_f - E.gk_f1) * E.gk_fk;
+                        gv = ((float)KWAVE[(int)(E.gk_ph * 32.0f) & 31] * (2.0f / 15.0f) - 1.0f) * (float)E.gk_vol * (1.0f / 15.0f);
+                        if (E.gk_click > 0.0f) { gv += (rnd() > 0.0f ? 0.5f : -0.5f) * E.gk_click; E.gk_click *= 0.996f; if (E.gk_click < 0.01f) E.gk_click = 0.0f; }
+                        gv *= E.gk_g * 0.6f;
+                        E.gk_len -= 1.0f;
+                        if (E.gk_per > 0 && --E.gk_cnt <= 0) { E.gk_cnt = E.gk_per; E.gk_vol--; }
+                    }
+                    if (E.gn_vol > 0 && E.gn_len > 0.0f) {          /* the noise channel */
+                        int st = 0, ones = 0;
+                        E.gn_ph += E.gn_inc;
+                        while (E.gn_ph >= 1.0f) {                   /* the register's clocks in this sample */
+                            uint16_t x = (uint16_t)((E.gn_lfsr ^ (E.gn_lfsr >> 1)) & 1u);
+                            E.gn_lfsr = (uint16_t)((E.gn_lfsr >> 1) | (x << 14));
+                            if (E.gn_w7) E.gn_lfsr = (uint16_t)((E.gn_lfsr & ~(1u << 6)) | (x << 6));
+                            ones += (int)(~E.gn_lfsr & 1u); st++;
+                            E.gn_ph -= 1.0f;
                         }
-                        if (!chip) x += rnd() * (1.0f - hmet);
-                        E.h_lp += hpC * (x - E.h_lp);
-                        hp = x - E.h_lp;
-                        E.h_lp2 += hpC * (hp - E.h_lp2);
-                        hp2 = hp - E.h_lp2;
-                        hv = hp2 * E.h_env * E.h_gain * 1.1f;
-                        E.h_env *= E.h_dec;
+                        if (st) E.gn_out = (float)(ones * 2 - st) / (float)st;   /* (several clocks: their average, as the
+                                                                                    console's output stage smooths them) */
+                        nv = E.gn_out * (float)E.gn_vol * (1.0f / 15.0f);
+                        if (E.gn_tvol > 0) {                        /* a snare's square body */
+                            E.gn_tph += E.gn_tinc; if (E.gn_tph >= 1.0f) E.gn_tph -= 1.0f;
+                            nv += (E.gn_tph < 0.5f ? 1.0f : -1.0f) * (float)E.gn_tvol * (1.0f / 15.0f) * 0.6f;
+                            if (--E.gn_tcnt <= 0) { E.gn_tcnt = (int)(SR / 64.0f); E.gn_tvol -= 3; }
+                        }
+                        nv *= E.gn_g * 0.5f;
+                        E.gn_len -= 1.0f;
+                        if (E.gn_per > 0 && --E.gn_cnt <= 0) { E.gn_cnt = E.gn_per; E.gn_vol--; }
                     }
-                    if (E.r_env > 1e-4f) {
-                        E.r_ph1 += kt->r_f1 / SR; if (E.r_ph1 >= 1.0f) E.r_ph1 -= 1.0f;
-                        E.r_ph2 += kt->r_f2 / SR; if (E.r_ph2 >= 1.0f) E.r_ph2 -= 1.0f;
-                        if (chip)                         /* chip: two square waves, a blip */
-                            rv = ((E.r_ph1 < 0.5f ? 0.4f : -0.4f) + (E.r_ph2 < 0.25f ? 0.3f : -0.1f) + E.nz2 * kt->r_noise * E.r_env)
-                                 * E.r_env * E.r_gain * 0.5f;
-                        else
-                        rv = (fm_sin_turns(E.r_ph1) * 0.55f + fm_sin_turns(E.r_ph2) * 0.45f + rnd() * kt->r_noise * E.r_env)
-                             * E.r_env * E.r_gain * 0.55f;
-                        E.r_env *= rDec;
-                    }
-                    if (E.h_roll) {                   /* the roll's next hit */
-                        E.h_roll_left -= 1.0f;
-                        if (E.h_roll_left <= 0.0f) {
-                            E.h_roll--; E.h_roll_left += E.h_roll_len;
-                            E.h_env = 1.0f; E.h_gain = E.h_roll_g * (0.7f + 0.2f * rndu());
+                    if (E.g_roll) {                                 /* the roll's next hit (the hat again) */
+                        E.g_roll_left -= 1.0f;
+                        if (E.g_roll_left <= 0.0f) {
+                            const kit_t *kk = &E.dr.kit;
+                            E.g_roll--; E.g_roll_left += E.g_roll_len;
+                            gb_noise(kk->h_clk, kk->h_w7 > 0.5f, (int)kk->h_vol - 2, kk->h_env, kk->h_len, E.g_roll_g, 0.0f);
                         }
                     }
-                    if (E.s_env > 1e-4f) {           /* snare: a body (two tones that drop a little) and filtered noise;
-                                                        a clap: a band of noise in bursts, then a tail */
-                        float nz = chip ? E.nz2 : rnd(), sv, body, nf, v1, v2, v3, fb = kt->s_tone * (1.0f + 0.5f * E.s_tenv) / SR;
-                        E.s_ph += fb; if (E.s_ph >= 1.0f) E.s_ph -= 1.0f;
-                        E.s_ph2 += fb * 1.62f; if (E.s_ph2 >= 1.0f) E.s_ph2 -= 1.0f;
-                        body = chip ? tri4(E.s_ph) * E.s_tenv
-                                    : (fm_sin_turns(E.s_ph) * 0.65f + fm_sin_turns(E.s_ph2) * 0.35f) * E.s_tenv;
-                        v3 = nz - E.s_hp;
-                        v1 = s_a1 * E.s_lp + s_a2 * v3;
-                        v2 = E.s_hp + s_a2 * E.s_lp + s_a3 * v3;
-                        E.s_lp = 2.0f * v1 - E.s_lp;
-                        E.s_hp = 2.0f * v2 - E.s_hp;
-                        nf = kt->s_clap > 0.5f ? v1 * 1.5f : (nz - s_k * v1 - v2) * 0.55f + v1 * 0.7f;   /* band / high + band */
-                        sv = (body * kt->s_body * 1.3f + nf * (1.1f - 0.45f * kt->s_body)) * E.s_env * E.s_gain * sAmp;
-                        E.s_env *= E.s_clapn ? sBurst : sDec;
-                        E.s_tenv *= sTdec;
-                        if (E.s_clapn) {
-                            E.s_clapt -= 1.0f;
-                            if (E.s_clapt <= 0.0f) { E.s_clapn--; E.s_env = 1.0f; E.s_clapt = 0.011f * SR; }
-                        }
-                        rv += sv;
+                    if (E.gp_vol > 0 && E.gp_len > 0.0f) {          /* perc: the pulse channel */
+                        E.gp_ph += E.gp_inc; if (E.gp_ph >= 1.0f) E.gp_ph -= 1.0f;
+                        nv += (E.gp_ph < E.gp_duty ? 1.0f : -1.0f) * (float)E.gp_vol * (1.0f / 15.0f) * E.gp_g * 0.35f;
+                        E.gp_len -= 1.0f;
+                        if (E.gp_per > 0 && --E.gp_cnt <= 0) { E.gp_cnt = E.gp_per; E.gp_vol--; }
                     }
-                    dh_l = hv * 0.85f + rv; dh_r = hv + rv * 0.85f;
+                    {   /* the console's DC blocker (a capacitor), and nothing else */
+                        float x = gv + nv;
+                        E.g_dc += 0.0015f * (x - E.g_dc);
+                        x -= E.g_dc;
+                        kv = gv - E.g_dc * 0.5f;
+                        dh_l = dh_r = x - kv;
+                    }
                 }
                 /* sidechain */
                 if (E.duck_atk) { E.duck += (1.0f - E.duck) * duckA; if (E.duck > 0.985f) E.duck_atk = 0; }

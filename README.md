@@ -5,36 +5,49 @@ A firmware for the M-VAVE FM-1 by **swtdr34mz**: the chiptune sibling of
 by Obsimo (OSR Records). Built on [fm1-base](https://github.com/charlesvestal/fm1-base) and
 [felucca-bsp](https://github.com/hugelton/felucca-bsp).
 
-Play the chords of a video game tune with one finger and a melody over them, with chip sounds and chip drums, build
-your own drum grooves, loop 8 bars of chords to jam over, while a little pixel runner runs as long as you play.
+Play the chords of a video game tune with one finger and a melody over them, with chip sounds and Game Boy drums, build
+your own drum grooves, loop 8 bars of chords to jam over, while a pixel hero runs through a jump'n'run level as long as you
+play: it jumps on every chord, collects coins, stomps enemies and fights a boss at the end of each level.
 
 **Play it in the browser:** https://swtdr34mz-afk.github.io/PIXEL_RUN/emu/ (the same firmware, built for the browser).
 
-![PIXEL RUN](site/img/screen-main.png) ![DRUM STUDIO](site/img/screen-studio.png)
+![PIXEL RUN](site/img/screen-main.png) ![A boss](site/img/screen-boss.png) ![DRUM STUDIO](site/img/screen-studio.png)
 
 ## What it does
 
-- **Sets:** 20 chord progressions in the style of famous video game tunes (platformers, racing, castles, battles,
-  underwater levels ...), under names of their own. A set's chords sit on the **black keys** (left to right). Each set
-  brings its own sounds, tempo, bass, drums and, where it fits, the chip arpeggio.
-- **Melody:** the **white keys** play the set's scale, fitted to the chord that plays (as in CHORD RUN). ASSIST (MELODY 2)
-  lights up the chord's notes, or GUIDE: a made-up melody that lights up key by key.
+- **Sets:** 20 levels, each a chord progression in the style of a famous video game tune, under a name of its own:
+  grassland, underground, sky, speed zone, factory, hero field, block world, robot fortress, first route, lava level,
+  boss castle, soldier base, beach race, crystal cave, time hall, underwater, candy land, alien planet, neon street,
+  rainbow race. A set's chords sit on the **black keys** (left to right). Each set brings its own sound, chord rhythm,
+  scale, tempo, bass riff, drum groove, effects and stage; three of them the chip arpeggio.
+- **Melody:** the **white keys** follow the chord: FOLLOW CHORD (MELODY page) puts the chord's root on the leftmost white
+  key and its scale above it, so every chord change moves the keys (a held note moves with it). FOLLOW SCALE keeps each
+  key on the set's scale. Each set has its own scale (major, minor, harmonic minor, dorian, mixolydian, phrygian,
+  phrygian dominant, lydian, pentatonics, blues). ASSIST (MELODY 2) lights up the chord's notes, or GUIDE: a melody that
+  lights up key by key (BLOCK DROP: Korobeiniki, the folk song the falling-blocks game made famous).
 - **Sounds:** 17 chip sounds: pulse waves (12.5, 25 and 50 %), a sweeping PWM, a handheld's 4-bit wave channel, the 8-bit
   consoles' stepped triangle, a home computer's stepped saw through its filter, a laser lead, a coin blip, a crushed pad,
   and the 16-bit consoles' FM (brass, bell, e-piano, strings). The bass has the chip TRIANGLE and PULSE too.
 - **Chip arpeggio:** ARP's rates FAST and CHIP play a chord as one fast arpeggio (30 or 60 notes a second), the classic
   way 8-bit music plays chords.
-- **Drums:** five kits (8-BIT, HANDHELD, 16-BIT, ROBOT, ARCADE) whose noise comes from a shift register, as the old sound
-  chips made it, with a stepped triangle kick. 20 grooves: platformer, overworld, shuffle, castle, boss fight, racing,
-  dungeon, shooter, puzzle, title, victory, underwater, space, chip house, chip trap, chip breaks, chip funk, chip hip hop,
-  gallop, credits.
+- **Drums:** the Game Boy's sound channels as its games and trackers made drums of them: a kick on the wave channel
+  (a 4-bit sine that drops), snare and hats on the noise channel (its shift register, 15- or 7-bit, a 4-bit volume that
+  steps down every n/64 s, the length counter; one channel, so a hat cuts the snare), perc on a pulse channel; no
+  polish, only the console's DC blocker. Five kits (POCKET, BRICK, TRACKER, GRITTY, TINY) and 20 grooves: platformer,
+  overworld, shuffle, castle, boss fight, racing, dungeon, shooter, puzzle, title, bounce, underwater, space, chip house,
+  turbo, chip breaks, chip funk, chip hip hop, gallop, credits.
 - **DRUM STUDIO:** build a groove of your own: 16 steps on 4 tracks (kick, snare, hats, perc), a kit, a swing, and keep it
   in one of 20 user slots (kept in the flash, in the backup too).
 - **FX:** a bitcrusher (fewer bits, a lower sample rate), delay, chorus, reverb, and the sidechain (GROOVE).
 - **Loop:** press REC, play up to 8 bars of chords (REC again closes it at its bar), and they play round while you play the
   melody on top, or build drums in the studio.
-- **The run:** a pixel runner runs while you play. The metres add up, the best run is kept, ten characters unlock, and
-  there is always a mission (play 24 chords, run 120 m at once, save a groove in the studio ...) that gives extra metres.
+- **The game:** a jump'n'run on the screen. The hero runs while you play and jumps on every chord (and by itself over
+  pits, walls and enemies, and up to coins); each melody note puts a coin ahead, as high as the note; blobs get stomped.
+  At each level's end a boss: every chord throws a star at it, every melody note a small one. Defeated, it gives 10 coins
+  and the next level (WORLD 1-1, 1-2 ...). The main page shows the set's world; every other page its own stage (FX the
+  lava level, CHORDS the sky, ARP the rainbow road, GROOVE the speed zone, BASS the underground, MELODY underwater,
+  MELODY 2 the crystal cave, CHORDS 2 the ice peaks, DRUMS the boss castle, the studio the block world). Coins, the world,
+  metres, missions and ten heroes to unlock are kept.
 
 ## Controls
 
@@ -43,7 +56,7 @@ your own drum grooves, loop 8 bars of chords to jam over, while a little pixel r
 | Black keys | The set's chords. With a rhythm the chord keeps playing (the same key again stops it); without one (HELD) it plays while you hold the key. The black keys right of the chords play the melody too |
 | White keys | The melody |
 | SELECT | Set (its own sounds, tempo, arpeggio and drums come with it) |
-| ALGORITHM | Chord rhythm: HELD, FULL (held, with the drums: the first start's), quarters, eighths, offbeat, pump, syncopated, tresillo, half-time |
+| ALGORITHM | Chord rhythm: HELD, FULL (held, with the drums), quarters, eighths, staccato, offbeat, pump, syncopated, stabs, tresillo, gallop, half-time. A set brings its own |
 | PRESET | The chords' sound |
 | K1..K4 | The page's four settings (shown at the bottom of the screen) |
 | FX | Delay, crush, chorus, reverb |
@@ -51,12 +64,12 @@ your own drum grooves, loop 8 bars of chords to jam over, while a little pixel r
 | ARP | The arpeggiator: mode, rate (1/4 .. 1/32, triplets, FAST, CHIP), flow, swing |
 | ENV | Groove: BPM, swing, density, sidechain |
 | LFO | Bass: sound, level, riff, filter |
-| EDIT | Melody: cutoff, level, space, preset. EDIT again: MELODY 2: glide, octave, vibrato, ASSIST |
+| EDIT | Melody: FOLLOW (chord / scale), level, space, preset. EDIT again: MELODY 2: glide, octave, vibrato, ASSIST |
 | GLO | Drums: style (the 20 grooves, then USER 1 .. USER 20), kick, hats, snare. **GLO again: the DRUM STUDIO** |
 | HOME | Back to the main page. Held: the title and your progress |
 | REC | The loop: ready → the first chord records up to 8 bars (REC closes it) → it plays round. Held 1 s: cleared |
 | PLAY | Stops the loop and starts it again from its start |
-| SEQ | The next character (the unlocked ones) |
+| SEQ | The next hero (the unlocked ones) |
 | SAVE | The music heard from outside the room |
 | OCT- / OCT+ | Octave |
 | HOME + REC held 3 s | Back to the first-start settings (your progress and your grooves stay) |
@@ -91,6 +104,7 @@ Locally (Linux x86-64), the simulator and its tests (the screens' pixel type is 
     X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host
     build/host/pixelrun_host tests/basic.txt build/host     # sets, sounds, crush, the drum studio, the loop
     build/host/pixelrun_host tests/run.txt build/host       # the run, a mission, the progress kept
+    build/host/pixelrun_host tests/melody.txt build/host    # the melody follows the chords
 
 ## Licence and credits
 

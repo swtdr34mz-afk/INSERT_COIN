@@ -39,7 +39,7 @@
 #include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x50525531u            /* "PRU1" */
+#define SET_MAGIC 0x50525532u            /* "PRU2" */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -57,7 +57,8 @@ typedef struct {
     uint8_t aflow, carp, cbass, cwidth, cspread, crate;   /* arp flow, arp mode, bass note, width, spread, arp rate */
     uint8_t aswing, clevel;                               /* arp swing, the chords' level */
     uint8_t dtrack, dkit, dswing, dslot;                  /* the drum studio: its track, the groove's kit and swing, the slot */
-    uint8_t rsv[4];
+    uint8_t mfollow;                                      /* the melody follows: 0 the chord (from its root), 1 the scale */
+    uint8_t rsv[3];
 } settings_t;
 static settings_t set;
 static uint8_t set_dirty;
@@ -79,7 +80,8 @@ static void settings_defaults(void)
     set.bsound = BASS_TRI; set.blevel = 80; set.bmotif = MOTIF_SUIT; set.bcut = 70;
     set.mcut = 50; set.mlev = 80; set.mrev = 25; set.msound = 0;
     set.mglide = 0; set.moct = 2; set.mvib = 0; set.assist = 0;
-    set.rhythm = RH_FULL;                                              /* FULL: chords held, the drums on */
+    set.rhythm = 1;                                                    /* (a rhythm: the set's own, song_style) */
+    set.mfollow = 0;
     set.dtrack = 0; set.dslot = 0;
     song_style();
 }
@@ -98,7 +100,12 @@ static void song_style(void)
     set.bpm = GRID_DEF[set.grid].bpm;
     set.carp = GRID_DEF[set.grid].arp;
     if (set.carp) set.crate = GRID_DEF[set.grid].arate;
-    if (set.rhythm && set.rhythm != RH_FULL) set.rhythm = GRID_DEF[set.grid].rhy;   /* (FULL stays: the chords held) */
+    if (set.rhythm) set.rhythm = GRID_DEF[set.grid].rhy;   /* its own rhythm (HELD stays HELD: the chords under the fingers) */
+    set.reverb = GRID_DEF[set.grid].rev; set.delay = GRID_DEF[set.grid].del;
+    set.crush = GRID_DEF[set.grid].crush; set.chorus = GRID_DEF[set.grid].chorus;
+    set.mvib = GRID_DEF[set.grid].mvib;
+    if (GRID_DEF[set.grid].guide) set.assist = 2;     /* its tune lights up (ASSIST: GUIDE) */
+    else if (set.assist == 2) set.assist = 0;
     groove_load(set.dpat);
 }
 
@@ -195,14 +202,6 @@ static int key_slot(int key, int *var, int *oct)
     return s >= 0 && s < (int)grid_n[set.grid] ? s : -1;
 }
 
-/* The melody: white key number w -> a MIDI pitch. Each white key has its own note in the SONG's scale (from the song's tonic,
- * leftmost key; the same for every chord), and that note follows the chord that played last: the chord's scale is the mode of
- * that chord (by its quality) that fits the song's key best; a note that is not in it moves one semitone, to a chord tone
- * if one is there, else down. So a key keeps its note when the chord changes, or moves a semitone at most. */
-static const int8_t MODES[8][7] = {{0,2,4,5,7,9,11}, {0,2,3,5,7,9,10}, {0,1,3,5,7,8,10}, {0,2,4,6,7,9,11},
-                                   {0,2,4,5,7,9,10}, {0,2,3,5,7,8,10}, {0,1,3,5,6,8,10},
-                                   {0,1,4,5,7,8,10}};   /* ionian dorian phrygian lydian mixolydian aeolian locrian, phrygian dominant
-                                                           (a minor song's V: its harmonic minor) */
 /* the notes of a set's chord (its triad), a bit per pitch class */
 static uint16_t chord_tones(int slot)
 {
@@ -221,48 +220,64 @@ static int song_minor(void)
     return (grid_w[set.grid][0].semi == 0 && grid_w[set.grid][0].q == 'm')
         || (grid_w[set.grid][n - 1].semi == 0 && grid_w[set.grid][n - 1].q == 'm');
 }
-/* the scale the melody plays over a chord (a bit per pitch class): the chord's mode that fits the song's key best, or with
- * lock the song's own */
+/* the set's own scale (data.h SCALE_*, GRID_DEF scale), a bit per pitch class, from its key */
+static uint16_t song_scale(void)
+{
+    int i, sc = GRID_DEF[set.grid].scale;
+    uint16_t m = 0;
+    if (sc == SC_AUTO) sc = song_minor() ? SC_MINOR : SC_MAJOR;
+    for (i = 0; i < SCALE_DEF[sc].n; i++) m |= (uint16_t)(1u << ((set.key + SCALE_DEF[sc].iv[i]) % 12));
+    return m;
+}
+/* the scale the melody plays over a chord (a bit per pitch class): the set's scale, with the chord's own notes in it (where
+ * one is missing, the scale's note a semitone from it gives way to it; else it is added) */
 static uint16_t mel_scale(int slot)
 {
-    int root, minor = song_minor(), cand[8], nc, i, j, best = 0, bs = -1;
-    const chord_def_t *d;
-    uint16_t song = 0, sc = 0;
+    uint16_t sc = song_scale(), ct;
+    int pc;
     if (slot < 0 || slot >= (int)grid_n[set.grid]) slot = 0;
-    d = &grid_w[set.grid][slot];
-    root = (set.key + d->semi) % 12;
-    for (i = 0; i < 7; i++) song |= (uint16_t)(1u << ((set.key + MODES[minor ? 5 : 0][i]) % 12));
-    switch (d->q) {
-    case 'm': cand[0] = 1; cand[1] = 5; cand[2] = 2; nc = 3; break;
-    case 'D': cand[0] = 4; cand[1] = 7; nc = 2; break;
-    case 'd': cand[0] = 6; nc = 1; break;
-    case 's': case 'S': for (i = 0; i < 8; i++) cand[i] = i; nc = 8; break;   /* no third: the mode nearest the song */
-    default: cand[0] = 0; cand[1] = 3; cand[2] = 4; cand[3] = 7; nc = 4; break;
+    ct = chord_tones(slot);
+    for (pc = 0; pc < 12; pc++) {
+        if (!((ct >> pc) & 1u) || ((sc >> pc) & 1u)) continue;
+        if ((sc >> ((pc + 1) % 12)) & 1u && !((ct >> ((pc + 1) % 12)) & 1u)) sc &= (uint16_t)~(1u << ((pc + 1) % 12));
+        else if ((sc >> ((pc + 11) % 12)) & 1u && !((ct >> ((pc + 11) % 12)) & 1u)) sc &= (uint16_t)~(1u << ((pc + 11) % 12));
+        sc |= (uint16_t)(1u << pc);
     }
-    for (j = 0; j < nc; j++) {
-        int s2 = 0;
-        for (i = 0; i < 7; i++) s2 += (song >> ((root + MODES[cand[j]][i]) % 12)) & 1;
-        if (s2 > bs) { bs = s2; best = cand[j]; }
-    }
-    for (i = 0; i < 7; i++) sc |= (uint16_t)(1u << ((root + MODES[best][i]) % 12));
-    if (GRID_DEF[set.grid].lock) sc = song;                              /* this song's melody keeps its own scale */
     return sc;
 }
+/* the melody: white key number w -> a MIDI pitch.
+ * FOLLOW CHORD (the start): the keys play the chord's scale (mel_scale) from the chord's root: the leftmost key is always
+ * the root of the chord that plays, the next ones the scale's notes above it, so every chord change moves the keys with it
+ * (and a note held over the change moves too).
+ * FOLLOW SCALE: each key keeps the set's scale from its tonic; a note that is not in the chord's scale moves a semitone. */
 static float mel_pitch(int w)
 {
-    int n = grid_n[set.grid], slot = last_slot, minor = song_minor(), base, deg, p, pc;
+    int n = grid_n[set.grid], slot = last_slot, base, deg, p, pc, i, np = 0, root;
+    int8_t pcs[12];
     uint16_t sc, ct;
     if (slot < 0 || slot >= n) slot = 0;
     sc = mel_scale(slot);
-    ct = chord_tones(slot);                                              /* the chord's own notes (its triad) */
-    base = 60 + set.key - (set.key >= 6 ? 12 : 0) + set.octave * 12 + ((int)set.moct - 2) * 12;   /* leftmost white key: the tonic */
+    ct = chord_tones(slot);
+    base = 60 + set.key - (set.key >= 6 ? 12 : 0) + set.octave * 12 + ((int)set.moct - 2) * 12;   /* the set's tonic */
     deg = w < 0 ? 0 : w;
-    p = base + MODES[minor ? 5 : 0][deg % 7] + 12 * (deg / 7);
-    pc = ((p % 12) + 12) % 12;
-    if (!((sc >> pc) & 1u)) {
-        int dn = (pc + 11) % 12, up = (pc + 1) % 12, in_dn = (sc >> dn) & 1u, in_up = (sc >> up) & 1u;
-        if (in_dn && in_up) p += (((ct >> up) & 1u) && !((ct >> dn) & 1u)) ? 1 : -1;
-        else p += in_up ? 1 : -1;
+    if (set.mfollow == 0) {
+        root = (set.key + grid_w[set.grid][slot].semi) % 12;
+        for (i = 0; i < 12; i++) if ((sc >> ((root + i) % 12)) & 1u) pcs[np++] = (int8_t)i;   /* the scale from the root */
+        if (np < 1) { pcs[0] = 0; np = 1; }
+        p = base + ((root - set.key) % 12 + 12) % 12;
+        if (p - base > 6) p -= 12;                                         /* the root nearest the tonic */
+        p += pcs[deg % np] + 12 * (deg / np);
+    } else {
+        uint16_t ss = song_scale();
+        for (i = 0; i < 12; i++) if ((ss >> ((set.key + i) % 12)) & 1u) pcs[np++] = (int8_t)i;
+        if (np < 1) { pcs[0] = 0; np = 1; }
+        p = base + pcs[deg % np] + 12 * (deg / np);
+        pc = ((p % 12) + 12) % 12;
+        if (!((sc >> pc) & 1u)) {
+            int dn = (pc + 11) % 12, up = (pc + 1) % 12, in_dn = (sc >> dn) & 1u, in_up = (sc >> up) & 1u;
+            if (in_dn && in_up) p += (((ct >> up) & 1u) && !((ct >> dn) & 1u)) ? 1 : -1;
+            else p += in_up ? 1 : -1;
+        }
     }
     while (p > 108) p -= 12;
     while (p < 36) p += 12;
@@ -632,6 +647,8 @@ static void send_bass(void) { eng_bass(set.bsound, set.bmotif, (float)set.blevel
 static int cur_idx = -1, held_idx = -1, active;
 static char chord_txt[16] = APP_NAME;
 static uint32_t hop_at;                                         /* the runner hops (a chord, a melody note) */
+static void gm_chord(void);
+static void gm_note(int pitch);
 static uint32_t chord_at;                                       /* when the chord began (ASSIST's beat) */
 static void play(int idx)
 {
@@ -653,7 +670,9 @@ static void play(int idx)
     if (cur_idx != idx || !active) chord_at = now;
     cur_idx = idx;
     hop_at = now;
-    { int v, o; last_slot = key_slot(idx, &v, &o); }
+    gm_chord();                                                 /* the hero jumps (at a boss: throws a star) */
+    { int v, o, was = last_slot; last_slot = key_slot(idx, &v, &o);
+      if (was != last_slot && ld_cur >= 0) eng_lead_bend(key_pitch(ld_cur)); }   /* a held melody note moves with the chord */
     active = 1;
     eng_chord(notes, bass, glide_s());
 }
@@ -689,6 +708,7 @@ static const char *const SPREAD_NAME[NSPREAD] = {"DIVERGE", "ALTERNATE", "DIVERG
 static const char *const RATE_NAME[NARP_RATE] = {"1/4", "1/4 T", "1/8", "1/8 T", "1/16", "1/16 T", "1/32", "FAST", "CHIP"};
 static const char *const MOCT_NAME[5] = {"-2", "-1", "0", "+1", "+2"};
 static const char *const ASSIST_NAME[3] = {"OFF", "CHORD", "GUIDE"};
+static const char *const FOLLOW_NAME[2] = {"CHORD", "SCALE"};
 
 enum { KD_PCT, KD_OFF, KD_GLIDE, KD_BPM, KD_BIP, KD_LIST };
 enum { G_NONE, G_PARAMS, G_FX, G_GROOVE, G_DRUMS, G_BASS, G_CHORD, G_DRUMLVL, G_MELODY, G_CFX, G_STYLE, G_GROOVE_ED };
@@ -718,7 +738,7 @@ static const kdef_t KD[NPAGE][4] = {
      {"DENSITY", &set.dens, 0, 100, KD_BIP, G_GROOVE, 0}, {"SIDECHAIN", &set.side, 0, 1, KD_LIST, G_PARAMS, ONOFF_NAME}},
     {{"SOUND", &set.bsound, 0, NBASS_SOUND - 1, KD_LIST, G_BASS, BASS_NAME}, {"LEVEL", &set.blevel, 0, 100, KD_PCT, G_BASS, 0},
      {"RIFF", &set.bmotif, 0, NMOTIF - 1, KD_LIST, G_BASS, MOTIF_NAME}, {"FILTER", &set.bcut, 0, 100, KD_PCT, G_BASS, 0}},
-    {{"CUTOFF", &set.mcut, 0, 100, KD_PCT, G_MELODY, 0}, {"LEVEL", &set.mlev, 0, 100, KD_PCT, G_MELODY, 0},
+    {{"FOLLOW", &set.mfollow, 0, 1, KD_LIST, G_NONE, FOLLOW_NAME}, {"LEVEL", &set.mlev, 0, 100, KD_PCT, G_MELODY, 0},
      {"SPACE", &set.mrev, 0, 100, KD_OFF, G_MELODY, 0}, {"PRESET", &set.msound, 0, NSOUND, KD_LIST, G_MELODY, msound_name}},
     {{"STYLE", &set.dpat, 0, NDRUM - 1, KD_LIST, G_STYLE, drum_name}, {"KICK", &set.dkick, 0, 100, KD_OFF, G_DRUMS, 0},
      {"HATS", &set.dhat, 0, 100, KD_OFF, G_DRUMS, 0}, {"SNARE", &set.drim, 0, 100, KD_OFF, G_DRUMS, 0}},
@@ -921,7 +941,7 @@ static void encoder(int k, int32_t e)
         wrap_u8(&set.grid, e, NGRID);
         song_style();                                           /* the song's own sound, tempo and drums */
         app_say("SET", GRID_DEF[set.grid].name);
-        send_sound(); send_bass(); send_drums(); send_params();
+        send_sound(); send_bass(); send_drums(); send_params(); send_fx(); send_cfx();
         if (set.rhythm) send_rhythm();
         rechord();
         break;
@@ -951,7 +971,7 @@ static void encoder(int k, int32_t e)
 /* While you play (a chord sounds, a melody note, the loop) the little runner runs: its metres add up (kept in the flash, apart
  * from the settings), a run ends after 3 s of quiet (the best one is kept), new characters unlock at so many metres, and
  * there is always a mission (one after the other, a bit harder each round) that gives metres on top. */
-static const char *const CHR_NAME_B[10] = {"CUBE", "DIAMOND", "SPIKE", "ORB", "HEXAGON", "CROSS", "STAR", "ARROW", "RING", "HOURGLASS"};
+static const char *const CHR_NAME_B[10] = {"PIX", "BOLT", "RUBY", "MINT", "SKY", "ACE", "NOVA", "ZED", "LUNA", "MAX"};
 static const uint32_t UNLOCK_M[10] = {0u, 0u, 250u, 700u, 1400u, 2400u, 3600u, 5200u, 7200u, 10000u};
 #define PROG_MAGIC 0x31524E43u                  /* "CNR1" */
 typedef struct {
@@ -1227,17 +1247,18 @@ static void user_chord(int key)
 }
 
 /* once a frame: the runner's speed and metres, the end of a run, the timed missions */
-static int obst_near(int wo, int cx);
+static void gm_advance(float px);
+static void gm_chord(void);
+static void gm_note(int pitch);
 static void game_step(uint32_t now, float dt)
 {
     int busy = active || now - run.note_at < 1200u || lp.st == LP_PLAY || lp.st == LP_REC;
     float bpm = ck_bpm > 0.0f ? ck_bpm : (float)set.bpm, vt = busy ? 5.0f * bpm / 120.0f : 0.0f, dm;
     if (busy) run.busy_at = now;
     run.speed += (vt - run.speed) * fm_minf(1.0f, dt * (busy ? 3.0f : 1.4f));
-    if (!busy && run.speed < 0.6f) run.speed = obst_near((int)run.scroll, 146) ? 0.6f : 0.0f;   /* it stops on free ground */
+    if (!busy && run.speed < 0.3f) run.speed = 0.0f;
     dm = run.speed * dt;
-    run.scroll += dm * 12.0f;                   /* 12 px a metre */
-    if (run.scroll > 30000.0f) run.scroll -= 30000.0f;   /* (a multiple of the obstacles' 300 px) */
+    gm_advance(dm * 12.0f);                     /* the level scrolls, 12 px a metre (not while a boss fights) */
     if (busy && !run.running) { run.running = 1; run.run_m = 0.0f; }
     if (run.running) {
         run.run_m += dm;
@@ -1357,15 +1378,25 @@ static uint32_t valid_keys(void)
  * of a rhythm (the second often the same, or a breath) and a line of white keys that moves mostly by step; on the strong beats it
  * lands on the chord's notes. The key to play lights up in time, the next one softly; a hit (the lit key, in its time, or just
  * before the next one) gives 2 metres. With a rhythm it follows the rhythm's own steps, without one the tempo from the chord. */
-#define GD_N 32
+#define GD_N 128                         /* up to 8 bars */
 static struct {
-    int8_t w[GD_N];                             /* the white key (number) a note starts on, -1 none */
+    int8_t w[GD_N];                             /* the white key (number) a note starts on, -1 none (a fixed tune: 0, its note in mn) */
+    uint8_t mn[GD_N];                           /* a fixed tune's notes (MIDI, in the set's own key) */
     int16_t grid;                               /* the song it was made for (-1 none yet) */
-    int16_t pos, next_pos, hit_pos;             /* the note under way, the next one (steps in the two bars), the last hit */
+    int16_t pos, next_pos, hit_pos;             /* the note under way, the next one (steps in the bars), the last hit */
     int8_t key, next_key;                       /* lit, lit softly (-1 none) */
     uint8_t soon;                               /* the next note is a moment away (an early press counts for it) */
+    uint8_t len, fixed;                         /* its length in steps, a fixed tune */
     uint32_t hits;                              /* the lit keys hit since the start */
-} gd = {{0}, -1, -1, -1, -1, -1, -1, 0, 0};
+} gd = {{0}, {0}, -1, -1, -1, -1, -1, -1, 0, 32, 0, 0};
+/* BLOCK DROP's GUIDE: Korobeiniki, the Russian folk song (1861, public domain) the falling-blocks game made famous, in A minor:
+ * (step in 8 bars of 16, MIDI note) */
+static const uint8_t KORO[][2] = {
+    {0, 76}, {4, 71}, {6, 72}, {8, 74}, {12, 72}, {14, 71}, {16, 69}, {20, 69}, {22, 72}, {24, 76}, {28, 74}, {30, 72},
+    {32, 71}, {38, 72}, {40, 74}, {44, 76}, {48, 72}, {52, 69}, {56, 69},
+    {66, 74}, {70, 77}, {72, 81}, {76, 79}, {78, 77}, {80, 76}, {86, 72}, {88, 76}, {92, 74}, {94, 72},
+    {96, 71}, {100, 71}, {102, 72}, {104, 74}, {108, 76}, {112, 72}, {116, 69}, {120, 69},
+};
 static const char *const GD_RHY[8] = {          /* one bar: x a note */
     "x...x.x...x.x...", "x.x...x.x...x...", "..x.x...x.x.x...", "x...x...x.x.x.x.",
     "x..x..x...x.x...", "x.x.x...x...x.x.", "...x..x.x...x...", "x...x.x.x.......",   /* (the last: a breath at the end) */
@@ -1377,6 +1408,15 @@ static void guide_make(int grid)
 {
     static const int8_t MV[8] = {-2, -1, -1, 0, 1, 1, 2, -1};
     int i, b, w, ra;
+    for (i = 0; i < GD_N; i++) { gd.w[i] = -1; gd.mn[i] = 0; }
+    gd.grid = (int16_t)grid;
+    gd.fixed = GRID_DEF[grid].guide;
+    if (gd.fixed) {                             /* a tune of its own */
+        for (i = 0; i < (int)(sizeof KORO / sizeof KORO[0]); i++) { gd.w[KORO[i][0]] = 0; gd.mn[KORO[i][0]] = KORO[i][1]; }
+        gd.len = 128;
+        return;
+    }
+    gd.len = 32;
     gd_rng = 0x9E3779B9u ^ ((uint32_t)grid * 0x85EBCA6Bu + 0x1234567u);
     for (i = 0; i < 6; i++) gd_rand();
     w = 7 + (int)(gd_rand() % 3u);              /* around the octave above the tonic */
@@ -1395,10 +1435,27 @@ static void guide_make(int grid)
     gd.grid = (int16_t)grid;
 }
 
-/* the key a guide note lights: on a strong beat (or a bar's first note) the nearest white key on the chord's notes */
+/* the melody key that plays MIDI note m now, or the nearest with its pitch class (-1: none) */
+static int key_for_pitch(int m)
+{
+    int k, best = -1, bd = 999;
+    for (k = 0; k < NKEYS; k++) {
+        int p, d;
+        if (!mel_key(k)) continue;
+        p = (int)key_pitch(k);
+        if (p == m) return k;
+        if (((p - m) % 12 + 12) % 12) continue;
+        d = p > m ? p - m : m - p;
+        if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+}
+/* the key a guide note lights: a fixed tune's note where it is now; else on a strong beat (or a bar's first note) the
+ * nearest white key on the chord's notes */
 static int guide_key(int pos)
 {
     int w = gd.w[pos], i;
+    if (gd.fixed) return key_for_pitch((int)gd.mn[pos] + (int)set.key - (int)GRID_DEF[set.grid].key);
     static const int8_t D[5] = {0, -1, 1, -2, 2};
     if (pos % 4 == 0 || pos == 0 || pos == 16) {
         uint16_t ct = chord_tones(last_slot);
@@ -1426,19 +1483,19 @@ static void guide_tick(uint32_t now)
         uint32_t ti = (uint32_t)t;
         st = (int)(ti % 16u); bar = ti / 16u; fr = t - (float)ti;
     }
-    cur = (int)((bar & 1u) * 16u) + st;
+    cur = (int)((bar % (uint32_t)(gd.len / 16u)) * 16u) + st;
     if (cur == last_cur && last_slot == last_slot_g && set.grid == last_grid) {   /* the same step: only "soon" moves */
-        gd.soon = gd.next_pos == (cur + 1) % GD_N && fr > 0.55f;
+        gd.soon = gd.next_pos == (cur + 1) % gd.len && fr > 0.55f;
         return;
     }
     last_cur = cur; last_slot_g = last_slot; last_grid = set.grid;
     gd.key = gd.next_key = -1; gd.pos = gd.next_pos = -1; gd.soon = 0;
     for (i = 0; i < 4; i++) {                   /* the note under way: the last start, at most 4 steps back */
-        int p = (cur - i + GD_N) % GD_N;
+        int p = (cur - i + gd.len) % gd.len;
         if (gd.w[p] >= 0) { gd.pos = (int16_t)p; break; }
     }
     for (i = 1; i <= 8; i++) {                  /* the next one */
-        int p = (cur + i) % GD_N;
+        int p = (cur + i) % gd.len;
         if (gd.w[p] >= 0) { gd.next_pos = (int16_t)p; gd.soon = i == 1 && fr > 0.55f; break; }
     }
     if (gd.pos >= 0) gd.key = (int8_t)guide_key(gd.pos);
@@ -1519,6 +1576,7 @@ static void input(void)
         if ((keys & bit) && !(ui.keys & bit) && mel_key((int)k)) {      /* (a white key, or a black one with no chord) */
             ld_held |= bit; ld_cur = (int)k; hop_at = now; eng_lead(key_pitch((int)k));
             game_note();
+            gm_note((int)key_pitch((int)k));                     /* a coin appears ahead, high as the note */
             guide_press((int)k, now);
         } else if (!(keys & bit) && (ui.keys & bit) && (ld_held & bit)) {
             ld_held &= ~bit;
@@ -1708,22 +1766,26 @@ static void scene_step(uint32_t now, float dt)
 /* ---- the info bands, crisp over the picture */
 static uint16_t page_col(void) { const uint8_t *c = PAGE_RGB[set.page]; return RGB(c[0], c[1], c[2]); }
 
-/* a text shortened (from its end) until it fits w pixels */
-static void fit_text(char *b, const felucca_font_t *f, int32_t w)
-{
-    int n = 0;
-    while (b[n]) n++;
-    while (n > 1 && text_w(f, b) > w) b[--n] = 0;
-}
-
 /* ===================================================================================================== pixel look ===
- * A 90s console's picture, all from rectangles in a few flat colours: a sky in bands (dithered where they meet), drifting
- * pixel clouds, a blocky sun, far hills, a checkered ground that scrolls as the runner runs, and the runner: a chunky pixel
- * character (2 x 2 blocks, a black outline) that hops over spikes and crates, and when a chord is played. (x, y) in screen
- * rows 0..239, g_oy = the screen row of the canvas' first row (0 or 120). */
-static int g_oy;
-#define NSR(x, y, w, h, c) cv_rect((x), (y) - g_oy, (w), (h), (c))
-#define HY 178                                                    /* the ground's top on the main screen */
+ * A 90s console's jump'n'run, all from rectangles in a few flat colours. The game view (screen rows 23..149; in the DRUM
+ * STUDIO 105..185) shows a stage: its sky, a back layer that scrolls slower (parallax), ambient bits (bubbles, embers, snow,
+ * stars ...), and the level: ground in columns of 8 px with steps, pits and floating platforms, coins, walking blobs, and at
+ * each level's end a boss. The hero (a pixel sprite, 2 x 2 blocks) runs while you play, jumps on each chord (and by itself
+ * over pits, walls and enemies, up to coins), stomps the blobs, and throws stars at the boss: each chord a star.
+ * The main page shows the set's world; every other page its own stage. (x, y) in screen rows 0..239; g_oy the screen row of
+ * the canvas' first row (0 or 120); everything drawn through px_rect, clipped to the canvas and to the rows clip0..clip1. */
+static int g_oy, clip0 = 0, clip1 = 240;
+static void px_rect(int x, int y, int w, int h, uint16_t c)
+{
+    int y0 = y < clip0 ? clip0 : y, y1 = y + h > clip1 ? clip1 : y + h;
+    if (y0 < g_oy) y0 = g_oy;
+    if (y1 > g_oy + 120) y1 = g_oy + 120;
+    if (x < 0) { w += x; x = 0; }
+    if (x + w > 240) w = 240 - x;
+    if (y1 <= y0 || w <= 0) return;
+    cv_rect(x, y0 - g_oy, w, y1 - y0, c);
+}
+#define NSR(x, y, w, h, c) px_rect((x), (y), (w), (h), (c))
 #define C_YEL RGB(255, 214, 40)
 #define C_ORA RGB(255, 140, 20)
 #define C_RED RGB(232, 48, 40)
@@ -1732,195 +1794,852 @@ static int g_oy;
 #define C_BLK RGB(0, 0, 0)
 #define C_NAVY RGB(16, 20, 64)
 #define C_GREY RGB(168, 176, 200)
-static int in_canvas(int y, int h) { return y + h > g_oy && y < g_oy + 120; }
 
-/* the sky: eight bands, deep blue at the top to almost white at the horizon hy, each seam dithered */
-static void px_sky(int hy)
+/* ---- the stages */
+enum { BK_HILLS, BK_MOUNT, BK_CLOUDS, BK_WALL, BK_PIPES, BK_SEA, BK_CITY, BK_CRYSTAL, BK_PLANET, BK_GEARS, BK_TETRO, BK_TREES,
+       BK_CANDY, BK_RAINBOW, BK_KELP, BK_VOLCANO };
+enum { GR_GRASS, GR_BRICK, GR_CHECKER, GR_METAL, GR_ROCK, GR_SAND, GR_ICE, GR_CANDY, GR_RAINBOW, GR_STONE, GR_CRYSTAL, GR_MOON };
+enum { AM_NONE, AM_CLOUDS, AM_BUBBLES, AM_EMBERS, AM_SNOW, AM_STARS, AM_DRIPS, AM_LEAVES, AM_CONFETTI, AM_BLOCKS, AM_STEAM };
+enum { PIT_DARK, PIT_LAVA, PIT_WATER, PIT_VOID };
+enum { BOSS_KING, BOSS_ROBOT };
+typedef struct {
+    const char *name, *boss;
+    uint8_t sky0[3], sky1[3];            /* the sky: top, horizon (eight bands between) */
+    uint8_t back, bc1[3], bc2[3];        /* the back layer and its two colours */
+    uint8_t ground, gt[3], gf[3], gd[3]; /* the ground: its style, top, fill, dark */
+    uint8_t amb, pit;
+    uint8_t en[3];                       /* the blobs' colour */
+    uint8_t btype, b1[3], b2[3];         /* the boss: its kind, colours */
+} stage_t;
+static const stage_t STAGE[NSTAGE] = {
+    {"GRASSLAND", "KING BLOB", {40, 80, 220}, {150, 210, 255}, BK_HILLS, {40, 150, 60}, {120, 220, 90}, GR_GRASS, {90, 210, 60},
+     {170, 100, 40}, {110, 60, 20}, AM_CLOUDS, PIT_DARK, {220, 70, 50}, BOSS_KING, {230, 60, 50}, {250, 160, 120}},
+    {"UNDERGROUND", "CAVE KING", {0, 0, 0}, {10, 14, 40}, BK_WALL, {20, 40, 90}, {40, 70, 140}, GR_BRICK, {60, 110, 200},
+     {30, 60, 140}, {10, 20, 60}, AM_DRIPS, PIT_DARK, {90, 140, 255}, BOSS_KING, {60, 90, 220}, {150, 190, 255}},
+    {"SKY HIGH", "CLOUD KING", {60, 140, 255}, {210, 240, 255}, BK_CLOUDS, {250, 250, 255}, {200, 220, 250}, GR_ICE, {255, 255, 255},
+     {210, 230, 255}, {160, 190, 240}, AM_CLOUDS, PIT_VOID, {255, 150, 200}, BOSS_KING, {250, 240, 250}, {255, 180, 220}},
+    {"SPEED ZONE", "EGG ROBOT", {30, 90, 230}, {120, 210, 255}, BK_HILLS, {30, 160, 80}, {90, 220, 120}, GR_CHECKER, {80, 220, 60},
+     {200, 110, 40}, {130, 60, 20}, AM_CLOUDS, PIT_WATER, {60, 120, 255}, BOSS_ROBOT, {200, 200, 210}, {230, 50, 50}},
+    {"FACTORY ZONE", "MECHA MK2", {30, 20, 40}, {90, 70, 60}, BK_PIPES, {70, 80, 90}, {150, 220, 60}, GR_METAL, {170, 180, 190},
+     {90, 100, 110}, {40, 44, 50}, AM_STEAM, PIT_LAVA, {150, 230, 60}, BOSS_ROBOT, {120, 130, 140}, {160, 240, 60}},
+    {"HERO FIELD", "OGRE KING", {250, 140, 60}, {255, 220, 140}, BK_TREES, {50, 100, 40}, {110, 170, 60}, GR_GRASS, {150, 200, 60},
+     {150, 100, 50}, {90, 60, 30}, AM_LEAVES, PIT_DARK, {160, 80, 200}, BOSS_KING, {120, 160, 60}, {220, 200, 80}},
+    {"BLOCK WORLD", "BLOCK KING", {20, 10, 50}, {70, 40, 120}, BK_TETRO, {0, 0, 0}, {0, 0, 0}, GR_STONE, {200, 200, 220},
+     {110, 110, 140}, {50, 50, 70}, AM_BLOCKS, PIT_VOID, {255, 220, 40}, BOSS_KING, {240, 60, 200}, {80, 230, 255}},
+    {"ROBOT FORTRESS", "MEGA BOT", {20, 24, 40}, {60, 70, 100}, BK_PIPES, {60, 70, 90}, {255, 80, 60}, GR_METAL, {150, 160, 180},
+     {80, 90, 110}, {30, 34, 44}, AM_STEAM, PIT_DARK, {255, 120, 40}, BOSS_ROBOT, {80, 120, 200}, {255, 60, 60}},
+    {"FIRST ROUTE", "TALL GRASS", {80, 170, 255}, {190, 235, 255}, BK_TREES, {40, 120, 50}, {90, 190, 80}, GR_GRASS, {110, 220, 90},
+     {190, 160, 100}, {130, 100, 60}, AM_LEAVES, PIT_WATER, {255, 200, 40}, BOSS_KING, {255, 210, 50}, {255, 120, 60}},
+    {"LAVA LEVEL", "MAGMA KING", {40, 0, 0}, {220, 70, 20}, BK_VOLCANO, {70, 20, 20}, {255, 120, 20}, GR_ROCK, {90, 40, 40},
+     {50, 24, 24}, {255, 90, 20}, AM_EMBERS, PIT_LAVA, {255, 160, 40}, BOSS_KING, {255, 80, 20}, {255, 220, 80}},
+    {"BOSS CASTLE", "DARK LORD", {10, 6, 24}, {60, 30, 80}, BK_WALL, {50, 50, 70}, {255, 160, 40}, GR_STONE, {120, 120, 140},
+     {70, 70, 90}, {30, 30, 40}, AM_EMBERS, PIT_LAVA, {160, 160, 180}, BOSS_KING, {130, 60, 200}, {255, 200, 60}},
+    {"SOLDIER BASE", "TANK BOT", {60, 80, 60}, {170, 190, 140}, BK_CITY, {60, 70, 60}, {230, 230, 120}, GR_METAL, {120, 130, 100},
+     {80, 90, 70}, {40, 44, 34}, AM_NONE, PIT_DARK, {120, 160, 80}, BOSS_ROBOT, {90, 120, 70}, {255, 210, 60}},
+    {"BEACH RACE", "CRAB KING", {40, 140, 255}, {255, 230, 170}, BK_SEA, {30, 110, 210}, {120, 200, 255}, GR_SAND, {250, 220, 140},
+     {230, 190, 110}, {190, 150, 80}, AM_CLOUDS, PIT_WATER, {255, 100, 80}, BOSS_KING, {250, 90, 60}, {255, 200, 160}},
+    {"CRYSTAL CAVE", "GEM KING", {10, 10, 40}, {50, 30, 110}, BK_CRYSTAL, {90, 60, 200}, {180, 140, 255}, GR_CRYSTAL, {170, 140, 255},
+     {90, 70, 180}, {40, 30, 90}, AM_STARS, PIT_VOID, {120, 255, 220}, BOSS_KING, {120, 220, 255}, {220, 180, 255}},
+    {"TIME HALL", "CLOCK BOT", {30, 20, 10}, {110, 80, 40}, BK_GEARS, {120, 90, 40}, {220, 180, 80}, GR_STONE, {180, 150, 90},
+     {120, 100, 60}, {60, 50, 30}, AM_STARS, PIT_VOID, {220, 180, 80}, BOSS_ROBOT, {200, 160, 60}, {120, 220, 255}},
+    {"UNDERWATER", "REEF KING", {0, 30, 90}, {20, 140, 200}, BK_KELP, {20, 90, 80}, {60, 170, 120}, GR_SAND, {220, 200, 140},
+     {180, 160, 110}, {120, 100, 70}, AM_BUBBLES, PIT_WATER, {255, 120, 160}, BOSS_KING, {60, 200, 200}, {255, 120, 160}},
+    {"CANDY LAND", "CAKE KING", {255, 170, 220}, {255, 240, 250}, BK_CANDY, {255, 120, 180}, {255, 255, 255}, GR_CANDY, {255, 150, 200},
+     {255, 255, 255}, {230, 90, 150}, AM_CONFETTI, PIT_VOID, {120, 200, 255}, BOSS_KING, {255, 120, 200}, {255, 255, 160}},
+    {"ALIEN PLANET", "UFO BOSS", {0, 0, 10}, {40, 10, 60}, BK_PLANET, {160, 80, 200}, {90, 230, 160}, GR_MOON, {150, 150, 170},
+     {100, 100, 120}, {50, 50, 60}, AM_STARS, PIT_VOID, {90, 255, 120}, BOSS_ROBOT, {160, 160, 180}, {90, 255, 120}},
+    {"NEON STREET", "BIG BOSS", {10, 0, 30}, {80, 20, 90}, BK_CITY, {30, 20, 60}, {255, 80, 200}, GR_METAL, {90, 90, 120},
+     {50, 50, 70}, {20, 20, 30}, AM_NONE, PIT_DARK, {255, 80, 200}, BOSS_ROBOT, {60, 60, 80}, {255, 80, 200}},
+    {"RAINBOW ROAD", "STAR KING", {0, 0, 20}, {30, 10, 60}, BK_RAINBOW, {0, 0, 0}, {0, 0, 0}, GR_RAINBOW, {255, 255, 255},
+     {0, 0, 0}, {0, 0, 0}, AM_STARS, PIT_VOID, {255, 230, 80}, BOSS_KING, {255, 230, 80}, {255, 120, 200}},
+    {"ICE PEAKS", "FROST KING", {90, 150, 230}, {220, 240, 255}, BK_MOUNT, {150, 180, 230}, {255, 255, 255}, GR_ICE, {240, 250, 255},
+     {170, 210, 250}, {110, 150, 210}, AM_SNOW, PIT_WATER, {80, 160, 255}, BOSS_KING, {150, 220, 255}, {255, 255, 255}},
+};
+/* each page's own stage (the main page: the set's world) */
+static const uint8_t PAGE_STAGE[NPAGE] = {0, ST_LAVA, ST_SKY, ST_SPEED, ST_UNDER, ST_WATER, ST_CASTLE, ST_CRYSTAL, ST_ICE,
+                                          ST_RAINBOW, ST_BLOCKS};
+static int cur_stage(void) { return set.page == PG_MAIN ? GRID_DEF[set.grid].stage : PAGE_STAGE[set.page]; }
+static uint16_t rgb3(const uint8_t *c) { return RGB(c[0], c[1], c[2]); }
+static uint16_t mix3(const uint8_t *a, const uint8_t *b, int k, int n)
 {
-    static const uint8_t B[8][3] = {{12, 16, 88}, {20, 36, 150}, {28, 64, 196}, {40, 100, 224}, {64, 136, 240},
-                                    {104, 172, 248}, {156, 204, 252}, {212, 232, 255}};
-    int b, x;
-    for (b = 0; b < 8; b++) {
-        int y0 = hy * b / 8, y1 = hy * (b + 1) / 8;
-        if (!in_canvas(y0, y1 - y0)) continue;
-        NSR(0, y0, 240, y1 - y0, RGB(B[b][0], B[b][1], B[b][2]));
-        if (b < 7) {                                              /* the seam: the next band's colour, every other pixel */
-            uint16_t nc = RGB(B[b + 1][0], B[b + 1][1], B[b + 1][2]);
+    return RGB(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, a[2] + (b[2] - a[2]) * k / n);
+}
+static uint32_t hash32(uint32_t x) { x ^= x >> 16; x *= 0x7FEB352Du; x ^= x >> 15; x *= 0x846CA68Bu; x ^= x >> 16; return x; }
+
+/* ---- the level: columns of 8 px. Each level is LV_W px long, its last stretch flat: the boss's arena. A column's ground
+ * height in tiles (0: a pit), and a floating platform's (0: none) */
+#define LV_W 1600
+#define ARENA 280
+static int col_ground(int c, int st, int *plat)
+{
+    int x = c * 8, seg, r, k;
+    *plat = 0;
+    if (x < 0) return 1;
+    if (x % LV_W >= LV_W - ARENA || x % LV_W < 120) return 1;           /* the arena, and each level's start: flat */
+    seg = c / 8; k = c % 8;
+    r = (int)(hash32((uint32_t)seg * 2654435761u + (uint32_t)st * 977u) % 12u);
+    switch (r) {
+    case 0: case 1: return 2;                                           /* a step up */
+    case 2: return k >= 2 && k <= 5 ? 3 : 2;                            /* a hill */
+    case 3: return k >= 3 && k <= 5 ? 0 : 1;                            /* a pit */
+    case 4: if (k >= 1 && k <= 5) *plat = 6; return 1;                  /* a platform up there */
+    case 5: if (k >= 2 && k <= 6) *plat = 5; return k >= 3 && k <= 5 ? 0 : 1;   /* a pit with a platform over it */
+    case 6: return k >= 4 ? 2 : 1;
+    default: return 1;
+    }
+}
+static int seg_coins(int seg, int st) { return (int)(hash32((uint32_t)seg * 40503u + (uint32_t)st * 31u + 7u) % 5u) == 1; }
+
+/* ---- the game's state */
+#define GM_COINS 10
+#define GM_ENEMY 4
+#define GM_SHOT 6
+#define GM_PART 24
+#define HERO_X 60
+static struct {
+    float ws;                                    /* the world's scroll (px) */
+    float hy, vy;                                /* the hero's height above the view's bottom (px), its speed up (px/s) */
+    uint8_t ground, face;                        /* on the ground; its run frame */
+    float anim;                                  /* the run cycle */
+    uint32_t jump_ask;                           /* a chord asked for a jump (ms) */
+    struct { float wx, y; uint8_t on; } coin[GM_COINS];
+    uint32_t seg_seen, seg_taken[4];             /* the coins on the level's segments: taken (a bit each, 128 segments) */
+    struct { float wx; uint8_t on, squash; float t; } en[GM_ENEMY];
+    int32_t en_seg;                              /* the last segment that got a blob */
+    struct { float x, y, vx, vy; uint8_t on, boss; } shot[GM_SHOT];
+    struct { float x, y, vx, vy, life; uint16_t c; } part[GM_PART];
+    uint8_t boss, boss_hp, boss_max, boss_dead;  /* a boss fights (1), its life */
+    float boss_y, boss_vy, boss_t, boss_flash, boss_shoot, boss_hop;
+    uint32_t level;                              /* levels cleared */
+    uint32_t fought;                             /* the levels whose boss came (their count) */
+    uint8_t inited;
+    uint32_t coins;
+    int stage;                                   /* the stage drawn last (a new one: a new start) */
+    uint32_t banner_at;                          /* the level's name shown (ms) */
+} gm;
+
+static int gm_vb(void) { return set.page == PG_STUDIO ? 184 : 148; }   /* the view's bottom row */
+static int gm_vt(void) { return set.page == PG_STUDIO ? 112 : 23; }
+static int gm_ground_at(float wx, int *plat)
+{
+    int c = (int)(wx / 8.0f);
+    if (wx < 0.0f) c = -1;
+    return col_ground(c, gm.stage, plat);
+}
+
+static void gm_burst(float x, float y, uint16_t c, int n)
+{
+    int i, k = 0;
+    for (i = 0; i < GM_PART && k < n; i++) {
+        uint32_t h = hash32((uint32_t)i * 77u + (uint32_t)plat_ms());
+        if (gm.part[i].life > 0.0f) continue;
+        gm.part[i].x = x; gm.part[i].y = y;
+        gm.part[i].vx = (float)((int)(h % 200u) - 100);
+        gm.part[i].vy = (float)(80 + (int)((h >> 8) % 160u));
+        gm.part[i].life = 0.6f; gm.part[i].c = c;
+        k++;
+    }
+}
+static void gm_add_coin(int n)
+{
+    gm.coins += (uint32_t)n;
+    prog.rsv[0] = gm.coins;
+    prog_dirty = 1;
+}
+
+static void gm_reset_stage(int st)
+{
+    int i;
+    gm.stage = st;
+    for (i = 0; i < GM_ENEMY; i++) gm.en[i].on = 0;
+    for (i = 0; i < GM_SHOT; i++) gm.shot[i].on = 0;
+    gm.en_seg = (int32_t)(gm.ws / 64.0f) + 4;
+    gm.banner_at = plat_ms();
+}
+
+/* a chord: the hero jumps (on the ground), at a boss it throws a star too */
+static void gm_chord(void)
+{
+    int i;
+    gm.jump_ask = plat_ms();
+    if (gm.boss == 1)
+        for (i = 0; i < GM_SHOT; i++)
+            if (!gm.shot[i].on) {
+                gm.shot[i].on = 1; gm.shot[i].boss = 0;
+                gm.shot[i].x = HERO_X + 10; gm.shot[i].y = gm.hy + 18;
+                gm.shot[i].vx = 260.0f; gm.shot[i].vy = 60.0f;
+                break;
+            }
+}
+/* a melody note: a coin ahead, as high as the note (at a boss: a little star) */
+static void gm_note(int pitch)
+{
+    int i, h = 26 + ((pitch % 24) + 24) % 24 * 2;
+    if (gm.boss == 1) {
+        for (i = 0; i < GM_SHOT; i++)
+            if (!gm.shot[i].on) {
+                gm.shot[i].on = 1; gm.shot[i].boss = 0;
+                gm.shot[i].x = HERO_X + 10; gm.shot[i].y = gm.hy + 14;
+                gm.shot[i].vx = 300.0f; gm.shot[i].vy = (float)(h - 30) * 2.0f;
+                break;
+            }
+        return;
+    }
+    for (i = 0; i < GM_COINS; i++)
+        if (!gm.coin[i].on) {
+            gm.coin[i].on = 1;
+            gm.coin[i].wx = gm.ws + HERO_X + 110.0f;
+            gm.coin[i].y = (float)h;
+            return;
+        }
+}
+
+/* the level scrolls px (the boss's arena holds it) */
+static void gm_advance(float px)
+{
+    float end;
+    uint32_t lv;
+    if (gm.boss) return;
+    lv = (uint32_t)(gm.ws / LV_W);
+    end = (float)(lv * LV_W + LV_W) - 240.0f;                           /* the arena in view: the boss comes */
+    gm.ws += px;
+    if (lv >= gm.fought && gm.ws >= end) {
+        gm.ws = end;
+        gm.fought = lv + 1u;
+        gm.boss = 1; gm.boss_max = gm.boss_hp = (uint8_t)(6 + (gm.level < 12 ? gm.level / 2 : 6));
+        gm.boss_y = 80.0f; gm.boss_vy = 0.0f; gm.boss_t = 0.0f; gm.boss_flash = 0.0f; gm.boss_shoot = 2.5f;
+        app_say("BOSS!", STAGE[gm.stage].boss);
+    }
+}
+
+/* once a frame: the hero's physics and its own jumps, the coins, blobs, stars, the boss, the sparks */
+static void gm_step(uint32_t now, float dt)
+{
+    int i, plat, h, st = cur_stage();
+    float hx = gm.ws + HERO_X, floor_y, sp = run.speed * 12.0f;
+    if (!gm.inited) {                                                   /* the coins and the world kept */
+        gm.inited = 1; gm.coins = prog.rsv[0]; gm.level = prog.rsv[1]; gm.hy = 8.0f; gm.stage = -1;
+        gm.ws = (float)(gm.level * LV_W); gm.fought = gm.level;
+    }
+    if (st != gm.stage) gm_reset_stage(st);
+    /* the ground under the hero (its feet: a few px each side) */
+    h = gm_ground_at(hx, &plat);
+    {
+        int p2, h2 = gm_ground_at(hx + 6.0f, &p2), h3, p3;
+        h3 = gm_ground_at(hx - 4.0f, &p3);
+        if (h2 > h) h = h2;
+        if (h3 > h) h = h3;
+        if (p2 > plat) plat = p2;
+        if (p3 > plat) plat = p3;
+    }
+    floor_y = h > 0 ? (float)(h * 8) : -40.0f;
+    if (plat && gm.hy >= (float)(plat * 8) - 6.0f) floor_y = (float)(plat * 8);   /* on a platform (from above) */
+    /* its own jumps: a chord asked, or a pit, a wall, a blob, an orb or a coin ahead */
+    if (gm.ground) {
+        int want = now - gm.jump_ask < 200u, j, pa, ha;
+        if (sp > 5.0f) {
+            for (j = 8; j <= 28 && !want; j += 4) {
+                ha = gm_ground_at(hx + (float)j, &pa);
+                if (ha == 0 || ha * 8 > (int)gm.hy + 2) want = 2;
+            }
+            for (j = 0; j < GM_ENEMY && !want; j++)
+                if (gm.en[j].on && !gm.en[j].squash && gm.en[j].wx - hx > 6.0f && gm.en[j].wx - hx < 34.0f) want = 2;
+            for (j = 0; j < GM_COINS && !want; j++)
+                if (gm.coin[j].on && gm.coin[j].wx - hx > 20.0f && gm.coin[j].wx - hx < 46.0f && gm.coin[j].y > gm.hy + 26.0f) want = 3;
+        }
+        for (j = 0; j < GM_SHOT && !want; j++)
+            if (gm.shot[j].on && gm.shot[j].boss && gm.shot[j].x - HERO_X > 4.0f && gm.shot[j].x - HERO_X < 40.0f) want = 2;
+        if (want) {
+            gm.vy = want == 3 ? 300.0f + (float)(want) : 330.0f;
+            gm.ground = 0;
+            if (want == 1) gm.jump_ask = 0;
+        }
+    }
+    gm.vy -= 950.0f * dt;
+    gm.hy += gm.vy * dt;
+    if (gm.hy <= floor_y && gm.vy <= 0.0f && gm.hy > floor_y - 14.0f) { gm.hy = floor_y; gm.vy = 0.0f; gm.ground = 1; }
+    else gm.ground = 0;
+    if (gm.hy < -40.0f) { gm.hy = 70.0f; gm.vy = 0.0f; }               /* fell in: back from above (no lives lost here) */
+    gm.anim += sp * dt * 0.08f + (sp > 1.0f ? 0.0f : 0.0f);
+    /* coins: the melody's, and the level's own rows (three over some segments) */
+    for (i = 0; i < GM_COINS; i++)
+        if (gm.coin[i].on) {
+            float dx = gm.coin[i].wx - hx, dy = gm.coin[i].y - (gm.hy + 14.0f);
+            if (dx > -10.0f && dx < 10.0f && dy > -18.0f && dy < 18.0f) {
+                gm.coin[i].on = 0; gm_add_coin(1);
+                gm_burst((float)HERO_X + dx, gm.coin[i].y, C_YEL, 4);
+            } else if (dx < -60.0f) gm.coin[i].on = 0;
+        }
+    {
+        int seg, k;
+        for (seg = (int)(hx / 64.0f) - 1; seg <= (int)(hx / 64.0f) + 1; seg++) {
+            if (seg < 0 || !seg_coins(seg, gm.stage) || (seg * 64) % LV_W >= LV_W - ARENA) continue;
+            for (k = 0; k < 3; k++) {
+                float cx = (float)(seg * 64 + 20 + k * 12), cy;
+                int pc, hc = col_ground((int)(cx / 8.0f), gm.stage, &pc);
+                uint32_t bit = 1u << ((uint32_t)(seg & 31) * 3u % 32u + (uint32_t)k) % 32u;
+                cy = (float)((pc ? pc : hc) * 8 + 30);
+                if (gm.seg_taken[(seg >> 3) & 3] & bit) continue;
+                if (cx - hx > -9.0f && cx - hx < 9.0f && cy - (gm.hy + 14.0f) > -18.0f && cy - (gm.hy + 14.0f) < 18.0f) {
+                    gm.seg_taken[(seg >> 3) & 3] |= bit; gm_add_coin(1);
+                    gm_burst((float)HERO_X, cy, C_YEL, 3);
+                }
+            }
+        }
+        seg = (int)(hx / 64.0f);
+        if ((uint32_t)seg != gm.seg_seen) {                             /* a new segment: its coins back (far behind) */
+            gm.seg_seen = (uint32_t)seg;
+            gm.seg_taken[((seg + 16) >> 3) & 3] = 0;
+        }
+    }
+    /* blobs: one on some segments, walking left; stomped from above */
+    if (!gm.boss) {
+        int ns = (int)((gm.ws + 260.0f) / 64.0f);
+        if (ns > gm.en_seg) {
+            gm.en_seg = ns;
+            if (hash32((uint32_t)ns * 911u + (uint32_t)gm.stage) % 3u == 0u && (ns * 64) % LV_W < LV_W - ARENA - 60)
+                for (i = 0; i < GM_ENEMY; i++)
+                    if (!gm.en[i].on) { gm.en[i].on = 1; gm.en[i].squash = 0; gm.en[i].wx = (float)(ns * 64 + 40); gm.en[i].t = 0.0f; break; }
+        }
+    }
+    for (i = 0; i < GM_ENEMY; i++) {
+        float dx;
+        int pe, he;
+        if (!gm.en[i].on) continue;
+        gm.en[i].t += dt;
+        if (gm.en[i].squash) { if (gm.en[i].t > 0.4f) gm.en[i].on = 0; continue; }
+        he = gm_ground_at(gm.en[i].wx - 10.0f, &pe);
+        if (he * 8 == gm_ground_at(gm.en[i].wx, &pe) * 8 && he > 0) gm.en[i].wx -= 14.0f * dt;   /* (it turns at an edge) */
+        dx = gm.en[i].wx - hx;
+        if (dx > -12.0f && dx < 12.0f && gm.hy < (float)(gm_ground_at(gm.en[i].wx, &pe) * 8) + 16.0f) {
+            gm.en[i].squash = 1; gm.en[i].t = 0.0f;                    /* stomped */
+            gm.vy = 220.0f; gm.ground = 0;
+            gm_add_coin(1);
+            gm_burst((float)HERO_X, gm.hy + 4.0f, rgb3(STAGE[gm.stage].en), 6);
+        }
+        if (dx < -80.0f) gm.en[i].on = 0;
+    }
+    /* stars and the boss's orbs */
+    for (i = 0; i < GM_SHOT; i++) {
+        if (!gm.shot[i].on) continue;
+        gm.shot[i].x += gm.shot[i].vx * dt;
+        gm.shot[i].y += gm.shot[i].vy * dt;
+        if (!gm.shot[i].boss) gm.shot[i].vy -= 300.0f * dt;
+        if (gm.shot[i].x > 250.0f || gm.shot[i].x < -10.0f || gm.shot[i].y < -10.0f) { gm.shot[i].on = 0; continue; }
+        if (!gm.shot[i].boss && gm.boss == 1 && gm.shot[i].x > 176.0f && gm.shot[i].x < 230.0f
+            && gm.shot[i].y > gm.boss_y + 6.0f && gm.shot[i].y < gm.boss_y + 52.0f) {
+            gm.shot[i].on = 0;
+            if (gm.boss_hp) gm.boss_hp--;
+            gm.boss_flash = 0.15f;
+            gm_burst(gm.shot[i].x, gm.shot[i].y, C_WHI, 4);
+            if (!gm.boss_hp) {                                          /* defeated */
+                char t[24], n[12];
+                gm.boss = 2; gm.boss_t = 0.0f;
+                gm_burst(200.0f, gm.boss_y + 24.0f, rgb3(STAGE[gm.stage].b1), 12);
+                gm_burst(200.0f, gm.boss_y + 24.0f, C_YEL, 10);
+                gm_add_coin(10);
+                add_metres(100u);
+                t[0] = 0; text_cat(t, "+10 COINS  WORLD ");
+                int_text((int32_t)((gm.level + 1) / 4 + 1), n); text_cat(t, n); text_cat(t, "-");
+                int_text((int32_t)((gm.level + 1) % 4 + 1), n); text_cat(t, n);
+                show_toast("BOSS DEFEATED", t);
+            }
+        }
+        if (gm.shot[i].boss && gm.shot[i].x < (float)HERO_X + 8.0f && gm.shot[i].x > (float)HERO_X - 8.0f
+            && gm.shot[i].y > gm.hy && gm.shot[i].y < gm.hy + 26.0f) {
+            gm.shot[i].on = 0;                                          /* the hero is hit: a flash, nothing lost */
+            gm_burst((float)HERO_X, gm.hy + 12.0f, C_RED, 4);
+        }
+    }
+    if (gm.boss == 1) {                                                 /* the boss: it hops, and throws an orb now and then */
+        int pb;
+        float bf = (float)(gm_ground_at(gm.ws + 200.0f, &pb) * 8);
+        gm.boss_t += dt;
+        gm.boss_vy -= 700.0f * dt;
+        gm.boss_y += gm.boss_vy * dt;
+        gm.boss_hop += dt;
+        if (gm.boss_y <= bf) { gm.boss_y = bf; gm.boss_vy = 0.0f; if (gm.boss_hop > 2.2f) { gm.boss_hop = 0.0f; gm.boss_vy = 260.0f; } }
+        if (gm.boss_flash > 0.0f) gm.boss_flash -= dt;
+        gm.boss_shoot -= dt;
+        if (gm.boss_shoot <= 0.0f) {
+            gm.boss_shoot = 2.8f;
+            for (i = 0; i < GM_SHOT; i++)
+                if (!gm.shot[i].on) {
+                    gm.shot[i].on = 1; gm.shot[i].boss = 1;
+                    gm.shot[i].x = 180.0f; gm.shot[i].y = gm.boss_y + 22.0f; gm.shot[i].vx = -90.0f; gm.shot[i].vy = 0.0f;
+                    break;
+                }
+        }
+    } else if (gm.boss == 2) {                                          /* it falls away; then the next level */
+        gm.boss_t += dt;
+        gm.boss_y -= 120.0f * dt;
+        if (gm.boss_t > 1.4f) {
+            gm.boss = 0; gm.level++;
+            prog.rsv[1] = gm.level; prog_dirty = 1;
+            gm.ws += 1.0f;
+            gm.banner_at = now;
+            for (i = 0; i < GM_SHOT; i++) gm.shot[i].on = 0;
+        }
+    }
+    for (i = 0; i < GM_PART; i++)
+        if (gm.part[i].life > 0.0f) {
+            gm.part[i].x += gm.part[i].vx * dt; gm.part[i].y += gm.part[i].vy * dt;
+            gm.part[i].vy -= 500.0f * dt; gm.part[i].life -= dt;
+        }
+}
+
+/* ---- the sprites: rows of letters, a colour each ('.' none); drawn in blocks of sc x sc, flipped with flip */
+static uint16_t spr_pal[4];                     /* '1', '2', '3' and '4': the sprite's own colours */
+static uint16_t spr_col(char c)
+{
+    switch (c) {
+    case 'K': return C_BLK;
+    case 'W': return C_WHI;
+    case 'S': return RGB(252, 196, 148);
+    case 'Y': return C_YEL;
+    case 'O': return C_ORA;
+    case 'R': return C_RED;
+    case '1': return spr_pal[1];
+    case '2': return spr_pal[2];
+    case '3': return spr_pal[3];
+    default: return spr_pal[0];
+    }
+}
+static void spr_draw(const char *const *rows, int w, int h, int x, int y, int sc, int flip)
+{
+    int i, j;
+    for (j = 0; j < h; j++)
+        for (i = 0; i < w; i++) {
+            char c = rows[j][flip ? w - 1 - i : i];
+            if (c == '.' || !c) continue;
+            NSR(x + i * sc, y + j * sc, sc, sc, spr_col(c));
+        }
+}
+/* the hero (10 x 14): standing, two run frames, jumping; facing right */
+static const char *const HERO[4][14] = {
+    {"...11111..", "..1111111.", "..11111111", "..KKSSKS..", ".KSSSSSSS.", "..KSSSSS..", "...SSSS...", "..222222..",
+     ".S222222S.", ".S233332S.", "..33..33..", "..33..33..", ".KKK..KKK.", ".........."},
+    {"...11111..", "..1111111.", "..11111111", "..KKSSKS..", ".KSSSSSSS.", "..KSSSSS..", "...SSSS...", "..222222..",
+     "S2222222..", "..2333322S", ".33....33.", ".33.....33", "KKK.....KK", ".........K"},
+    {"...11111..", "..1111111.", "..11111111", "..KKSSKS..", ".KSSSSSSS.", "..KSSSSS..", "...SSSS...", "..222222..",
+     "..S2222S..", "..233332..", "...3333...", "...33.3...", "...KKKKK..", ".........."},
+    {"...11111.S", "..1111111S", "..11111112", "..KKSSKS2.", ".KSSSSSS2.", "..KSSSSS..", "...SSSS...", "..222222..",
+     ".S222222..", "..233332..", ".33...33..", "33.....33.", "KK......KK", ".........."},
+};
+/* the ten heroes' colours: cap, shirt, trousers */
+static const uint8_t HERO_COL[10][3][3] = {
+    {{230, 40, 40}, {40, 90, 230}, {40, 50, 120}},   {{255, 200, 0}, {40, 40, 40}, {90, 60, 30}},
+    {{230, 40, 120}, {255, 230, 240}, {120, 40, 90}}, {{40, 200, 120}, {250, 250, 250}, {30, 90, 60}},
+    {{60, 170, 255}, {255, 255, 255}, {30, 60, 150}}, {{250, 250, 250}, {230, 40, 40}, {40, 40, 40}},
+    {{150, 60, 230}, {255, 200, 0}, {60, 30, 110}},  {{40, 40, 40}, {120, 120, 130}, {230, 40, 40}},
+    {{255, 150, 220}, {120, 80, 220}, {60, 40, 120}}, {{255, 120, 0}, {40, 160, 60}, {120, 70, 30}},
+};
+static const char *const COIN[3][8] = {
+    {"..YY..", ".YWYY.", "YWYYOY", "YWYYOY", "YWYYOY", "YWYYOY", ".YYOY.", "..YY.."},
+    {"..YY..", "..WY..", "..WO..", "..WO..", "..WO..", "..WO..", "..YO..", "..YY.."},
+    {"..Y...", "..W...", "..O...", "..O...", "..O...", "..O...", "..O...", "..Y..."},
+};
+static const char *const BLOB[3][7] = {
+    {"..1111..", ".111111.", "1WK11WK1", "11111111", "11KKKK11", ".111111.", ".KK..KK."},
+    {"..1111..", ".111111.", "1WK11WK1", "11111111", "11KKKK11", ".111111.", "KK....KK"},
+    {"........", "........", "........", "........", "..1111..", "1WK11WK1", "KKKKKKKK"},
+};
+static const char *const KING[16] = {
+    "......Y.Y.Y.....", ".....YYYYYYY....", ".....YRYYRYY....", "....111111111...", "...11111111111..",
+    "..1111111111111.", "..11WWK111WWK11.", ".111WWK111WWK111", ".111111111111111", ".11KKKKKKKKKK111",
+    ".11KWKWKWKWKK111", ".111KKKKKKKK1111", "..1111111111111.", "..2222222222222.", "...22222222222..",
+    "..KKK.....KKK...",
+};
+static const char *const ROBOT[16] = {
+    ".......R........", ".......K........", "....KKKKKKKK....", "...K11111111K...", "...K1RRRRRR1K...",
+    "...K1RWRRWR1K...", "...K11111111K...", "....KKKKKKKK....", "..K2222222222K..", ".K221222222122K.",
+    ".K2222KKKK2222K.", ".K2222K33K2222K.", "..K2222222222K..", "...K22K..K22K...", "...K22K..K22K...",
+    "..KKKKK..KKKKK..",
+};
+static const char *const STAR[5] = {"..Y..", ".YYY.", "YYWYY", ".YYY.", "..Y.."};
+static const char *const ORB[4] = {".OO.", "ORRO", "ORRO", ".OO."};
+
+/* ---- the stage's picture: sky, back layer, ambient bits, ground. vt..vb: the view's rows; wo: the world's scroll */
+static void st_sky(const stage_t *S, int vt, int vb)
+{
+    int b, x, n = 8;
+    for (b = 0; b < n; b++) {
+        int y0 = vt + (vb - vt) * b / n, y1 = vt + (vb - vt) * (b + 1) / n;
+        NSR(0, y0, 240, y1 - y0, mix3(S->sky0, S->sky1, b, n - 1));
+        if (b < n - 1) {
+            uint16_t nc = mix3(S->sky0, S->sky1, b + 1, n - 1);
             for (x = 0; x < 240; x += 4) { NSR(x, y1 - 2, 2, 1, nc); NSR(x + 2, y1 - 1, 2, 1, nc); }
         }
     }
 }
-
-/* a pixel cloud at (x, y): three lumps, white on a light-blue underside */
-static void px_cloud(int x, int y)
+static void st_back(const stage_t *S, int vt, int vb, int wo, uint32_t now)
 {
-    const uint16_t W = C_WHI, S = RGB(176, 208, 248);
-    if (!in_canvas(y - 8, 20)) return;
-    NSR(x + 4, y, 36, 6, S);
-    NSR(x, y - 2, 40, 6, W);
-    NSR(x + 6, y - 6, 12, 6, W);
-    NSR(x + 18, y - 8, 14, 8, W);
-    NSR(x + 2, y + 4, 34, 2, S);
-}
-static void px_clouds(int wo, uint32_t now, int top, int span)
-{
-    int i;
-    for (i = 0; i < 3; i++) {
-        int per = 300, x = (int)((i * 113 + 40) - (int32_t)(now / 90u) - wo / 8);
-        x = ((x % per) + per) % per - 50;
-        px_cloud(x, top + (i * 37) % span);
+    uint16_t c1 = rgb3(S->bc1), c2 = rgb3(S->bc2);
+    int x, i, y, off = wo / 3;
+    switch (S->back) {
+    case BK_HILLS: case BK_TREES:
+        for (x = 0; x < 240; x += 4) {
+            int u = x + off, hh = 14 + (int)(10.0f * fm_sin_turns((float)u * 0.004f) + 7.0f * fm_sin_turns((float)u * 0.011f));
+            hh &= ~1;
+            NSR(x, vb - 10 - hh, 4, hh + 10, c1);
+            NSR(x, vb - 10 - hh, 4, 2, c2);
+        }
+        if (S->back == BK_TREES)
+            for (i = 0; i < 6; i++) {
+                int tx = ((i * 53 - off / 2) % 300 + 300) % 300 - 30, ty = vb - 44;
+                NSR(tx + 8, ty + 18, 6, 18, RGB(110, 70, 30));
+                NSR(tx, ty, 22, 20, c1); NSR(tx + 4, ty - 6, 14, 8, c1); NSR(tx + 4, ty, 6, 4, c2);
+            }
+        break;
+    case BK_MOUNT: case BK_VOLCANO:
+        for (i = 0; i < 4; i++) {
+            int mx = ((i * 90 - off) % 360 + 360) % 360 - 60, mh = 50 + (i & 1) * 16, r;
+            for (r = 0; r < mh; r += 4) {
+                int w = (r * 2) & ~3;
+                NSR(mx - w / 2, vb - mh + r, w + 4, 4, c1);
+                if (r < 12) NSR(mx - w / 2, vb - mh + r, w + 4, 4, S->back == BK_VOLCANO ? (r < 4 && (now / 200u + (uint32_t)i) % 2u ? C_YEL : c2) : c2);
+            }
+        }
+        break;
+    case BK_CLOUDS:
+        for (i = 0; i < 8; i++) {
+            int cx = ((i * 41 - off) % 320 + 320) % 320 - 40, cy = vb - 22 + (i % 3) * 4;
+            NSR(cx, cy, 44, 30, c1); NSR(cx + 8, cy - 8, 26, 10, c1); NSR(cx + 2, cy + 10, 40, 4, c2);
+        }
+        break;
+    case BK_WALL:
+        for (y = vt; y < vb; y += 8) {
+            int row = (y - vt) / 8, sh = (row & 1) * 8 - off % 16;
+            NSR(0, y, 240, 8, c1);
+            NSR(0, y + 7, 240, 1, C_BLK);
+            for (x = sh - 16; x < 240; x += 16) NSR(x, y, 1, 7, C_BLK);
+        }
+        for (i = 0; i < 4; i++) {                                       /* torches */
+            int tx = ((i * 70 - off) % 280 + 280) % 280 - 20, ty = vt + 30;
+            NSR(tx, ty + 6, 4, 10, RGB(120, 80, 40));
+            NSR(tx - 1, ty, 6, 6, (now / 120u + (uint32_t)i) % 2u ? c2 : C_YEL);
+        }
+        break;
+    case BK_PIPES:
+        for (i = 0; i < 6; i++) {
+            int px = ((i * 47 - off) % 300 + 300) % 300 - 30, ph = 30 + (i * 23) % 50;
+            NSR(px, vb - ph, 12, ph, c1); NSR(px + 2, vb - ph, 3, ph, rgb3(S->gt));
+            NSR(px - 2, vb - ph, 16, 4, C_BLK); NSR(px - 2, vb - ph + 1, 16, 2, c1);
+            if (i % 2) NSR(px + 12, vb - ph + 10, 30, 8, c1);
+            if ((now / 300u + (uint32_t)i) % 3u == 0u) NSR(px + 4, vb - ph - 6, 4, 4, c2);
+        }
+        break;
+    case BK_SEA:
+        NSR(0, vb - 34, 240, 34, c1);
+        for (y = vb - 34; y < vb; y += 6)
+            for (x = ((int)(now / 60u) + y * 3 - off) % 24 - 24; x < 240; x += 24) NSR(x, y, 10, 2, c2);
+        NSR(170, vt + 14, 20, 20, C_YEL); NSR(166, vt + 18, 28, 12, C_YEL);
+        break;
+    case BK_CITY:
+        for (i = 0; i < 10; i++) {
+            int bx = ((i * 29 - off) % 290 + 290) % 290 - 30, bh = 30 + (int)(hash32((uint32_t)i) % 50u);
+            NSR(bx, vb - bh, 26, bh, c1);
+            for (y = vb - bh + 4; y < vb - 4; y += 8)
+                for (x = bx + 4; x < bx + 22; x += 8)
+                    if (hash32((uint32_t)(x * 7 + y * 13 + i)) % 3u) NSR(x, y, 4, 4, c2);
+        }
+        break;
+    case BK_CRYSTAL:
+        for (i = 0; i < 7; i++) {
+            int cx = ((i * 43 - off) % 300 + 300) % 300 - 30, ch = 24 + (i * 17) % 40, r;
+            for (r = 0; r < ch; r += 2) {
+                int w = r < 10 ? r : 10;
+                NSR(cx - w / 2, vb - ch + r, w + 2, 2, c1);
+                NSR(cx - w / 2, vb - ch + r, 2, 2, c2);
+            }
+        }
+        break;
+    case BK_PLANET:
+        for (y = -24; y < 24; y += 4) {
+            int w = 0;
+            while ((w + 4) * (w + 4) + y * y <= 24 * 24) w += 4;
+            NSR(170 - w, vt + 40 + y, 2 * w, 4, y < -8 ? c2 : c1);
+        }
+        NSR(132, vt + 38, 76, 4, rgb3(S->gt));
+        break;
+    case BK_GEARS:
+        for (i = 0; i < 4; i++) {
+            int gx = ((i * 70 - off) % 280 + 280) % 280 - 20, gy = vt + 30 + (i % 2) * 30, t;
+            float a0 = (float)(now % 4000u) / 4000.0f * (i % 2 ? -1.0f : 1.0f);
+            NSR(gx - 12, gy - 12, 24, 24, c1);
+            NSR(gx - 4, gy - 4, 8, 8, C_BLK);
+            for (t = 0; t < 8; t++) {
+                float a = a0 + (float)t / 8.0f;
+                NSR(gx + (int)(16.0f * fm_sin_turns(a + 0.25f)) - 3, gy + (int)(16.0f * fm_sin_turns(a)) - 3, 6, 6, c2);
+            }
+        }
+        break;
+    case BK_TETRO: {
+        static const uint16_t TC[6] = {RGB(0, 220, 255), RGB(255, 220, 0), RGB(180, 60, 255), RGB(60, 220, 60), RGB(255, 60, 60),
+                                       RGB(255, 140, 0)};
+        for (x = 0; x < 240; x += 8) {
+            int u = (x + off) / 8, hh = 2 + (int)(hash32((uint32_t)u * 3u) % 6u);
+            for (y = 0; y < hh; y++) {
+                uint16_t c = TC[hash32((uint32_t)(u / 2 * 7 + y / 2)) % 6u];
+                NSR(x, vb - 8 - y * 8, 8, 8, C_BLK); NSR(x + 1, vb - 7 - y * 8, 6, 6, c);
+                NSR(x + 1, vb - 7 - y * 8, 6, 1, C_WHI);
+            }
+        }
+        break;
+    }
+    case BK_CANDY:
+        for (i = 0; i < 6; i++) {
+            int lx = ((i * 50 - off) % 300 + 300) % 300 - 30, ly = vb - 50 - (i % 3) * 8;
+            NSR(lx + 9, ly + 16, 3, 40, C_WHI);
+            NSR(lx, ly, 20, 18, c1); NSR(lx + 4, ly + 4, 12, 10, c2); NSR(lx + 8, ly + 7, 4, 4, c1);
+        }
+        break;
+    case BK_RAINBOW: {
+        static const uint16_t RB[6] = {RGB(255, 60, 60), RGB(255, 150, 0), RGB(255, 230, 0), RGB(60, 220, 80), RGB(60, 140, 255),
+                                       RGB(170, 80, 255)};
+        for (i = 0; i < 6; i++) {
+            int r = 80 - i * 6;
+            for (y = -r; y < 0; y += 2) {
+                int w = 0;
+                while ((w + 2) * (w + 2) + y * y <= r * r) w += 2;
+                {
+                    int ri = r - 6, wi = 0;
+                    while (ri > 0 && (wi + 2) * (wi + 2) + y * y <= ri * ri) wi += 2;
+                    NSR(120 - w, vb - 6 + y, w - wi, 2, RB[i]);
+                    NSR(120 + wi, vb - 6 + y, w - wi, 2, RB[i]);
+                }
+            }
+        }
+        break;
+    }
+    case BK_KELP:
+        for (i = 0; i < 9; i++) {
+            int kx = ((i * 31 - off) % 280 + 280) % 280 - 20, kh = 30 + (i * 19) % 40;
+            for (y = 0; y < kh; y += 4) {
+                int sw = (int)(3.0f * fm_sin_turns((float)y * 0.03f + (float)(now % 3000u) / 3000.0f + (float)i * 0.2f));
+                NSR(kx + sw, vb - y - 4, 4, 4, y % 8 ? c1 : c2);
+            }
+        }
+        for (i = 0; i < 4; i++) NSR(30 + i * 60 + (int)(now / 200u) % 6, vt, 6, vb - vt - 30, mix3(S->sky1, S->bc2, 1, 4));
+        break;
+    default: break;
     }
 }
-
-/* the sun: a blocky disc (4 px blocks), yellow with an orange rim */
-static void px_sun(int cx, int cy, int r)
+static void st_amb(const stage_t *S, int vt, int vb, int wo, uint32_t now)
 {
+    int i, H = vb - vt;
+    uint32_t t = now / 16u;
+    for (i = 0; i < 10; i++) {
+        uint32_t h = hash32((uint32_t)i * 2654435761u + 11u);
+        int x = (int)(h % 240u), y, ph = (int)((h >> 9) % (uint32_t)H);
+        switch (S->amb) {
+        case AM_CLOUDS:
+            if (i > 3) return;
+            x = (int)(((int32_t)(h % 300u) - (int32_t)(t / 6u) - wo / 6) % 300);
+            if (x < 0) x += 300;
+            x -= 40; y = vt + 8 + (int)((h >> 5) % 30u);
+            NSR(x, y, 30, 8, C_WHI); NSR(x + 6, y - 4, 14, 6, C_WHI); NSR(x + 2, y + 6, 26, 2, RGB(190, 210, 245));
+            break;
+        case AM_BUBBLES:
+            y = vb - ((ph + (int)(t / 2u)) % H);
+            x += (int)(3.0f * fm_sin_turns((float)y * 0.05f));
+            NSR(x, y, 4, 4, C_WHI); NSR(x + 1, y + 1, 2, 2, rgb3(S->sky1));
+            break;
+        case AM_EMBERS:
+            y = vb - ((ph + (int)t) % H);
+            NSR(x + (int)(4.0f * fm_sin_turns((float)y * 0.03f)), y, 2, 2, i % 2 ? C_YEL : C_ORA);
+            break;
+        case AM_SNOW:
+            y = vt + ((ph + (int)(t / 2u)) % H);
+            NSR((x + y / 3) % 240, y, 2, 2, C_WHI);
+            break;
+        case AM_STARS:
+            y = vt + ph;
+            if ((t / 8u + (uint32_t)i) % 5u) NSR(x, y, 2, 2, C_WHI); else { NSR(x - 2, y, 6, 2, C_YEL); NSR(x, y - 2, 2, 6, C_YEL); }
+            break;
+        case AM_DRIPS:
+            y = vt + ((ph + (int)t * 2) % H);
+            NSR(x, y, 2, 4, RGB(90, 140, 255));
+            break;
+        case AM_LEAVES:
+            y = vt + ((ph + (int)(t / 2u)) % H);
+            NSR((x - (int)(t / 3u) + 480) % 240, y, 4, 2, i % 2 ? RGB(240, 160, 40) : RGB(120, 200, 60));
+            break;
+        case AM_CONFETTI: {
+            static const uint16_t CC[4] = {RGB(255, 80, 160), RGB(80, 200, 255), RGB(255, 230, 60), RGB(120, 230, 120)};
+            y = vt + ((ph + (int)(t / 2u)) % H);
+            NSR(x, y, 2, 4, CC[i % 4]);
+            break;
+        }
+        case AM_BLOCKS: {
+            static const uint16_t TC[4] = {RGB(0, 220, 255), RGB(255, 220, 0), RGB(180, 60, 255), RGB(255, 60, 60)};
+            if (i > 3) return;
+            y = vt + ((ph + (int)(t / 3u)) % H);
+            x &= ~7;
+            NSR(x, y, 16, 8, TC[i]); NSR(x + 8, y - 8, 8, 8, TC[i]); NSR(x, y, 16, 1, C_WHI);
+            break;
+        }
+        case AM_STEAM:
+            if (i > 5) return;
+            y = vb - 20 - ((ph + (int)(t / 3u)) % 50);
+            NSR(x, y, 6, 6, RGB(200, 200, 210));
+            break;
+        default: return;
+        }
+    }
+}
+/* one column of ground (8 px wide at screen x), its top at screen row top, down to the view's bottom vb */
+static void st_col(const stage_t *S, int x, int top, int vb, int c, uint32_t now)
+{
+    uint16_t gt = rgb3(S->gt), gf = rgb3(S->gf), gd = rgb3(S->gd);
     int y;
-    for (y = -r; y < r; y += 4) {
-        int dy = y + 2, half = 0;
-        while ((half + 4) * (half + 4) + dy * dy <= r * r) half += 4;
-        if (!in_canvas(cy + y, 4)) continue;
-        NSR(cx - half - 4, cy + y, 2 * half + 8, 4, C_ORA);
-        NSR(cx - half, cy + y, 2 * half, 4, C_YEL);
+    switch (S->ground) {
+    case GR_GRASS: case GR_SAND:
+        NSR(x, top, 8, vb - top, gf);
+        for (y = top + 6; y < vb; y += 6) NSR(x + ((y + c * 3) % 6), y, 2, 2, gd);
+        NSR(x, top, 8, S->ground == GR_GRASS ? 4 : 2, gt);
+        if (S->ground == GR_GRASS) NSR(x + (c % 3) * 2, top - 2, 2, 2, gt);
+        break;
+    case GR_BRICK: case GR_STONE: {
+        int bh = S->ground == GR_STONE ? 8 : 4;
+        NSR(x, top, 8, vb - top, gf);
+        for (y = top; y < vb; y += bh) { NSR(x, y + bh - 1, 8, 1, gd); if (((y - top) / bh + c) % 2) NSR(x, y, 1, bh, gd); }
+        NSR(x, top, 8, 2, gt);
+        break;
+    }
+    case GR_CHECKER:
+        for (y = top + 3; y < vb; y += 8) NSR(x, y, 8, 8, (((y - top) / 8 + c) & 1) ? gf : gd);
+        NSR(x, top, 8, 3, gt);
+        break;
+    case GR_METAL:
+        NSR(x, top, 8, vb - top, gf);
+        NSR(x, top, 8, 2, gt);
+        if (c % 2 == 0) for (y = top + 4; y < vb; y += 8) NSR(x + 2, y, 2, 2, gt);
+        NSR(x + 7, top, 1, vb - top, gd);
+        break;
+    case GR_ROCK:
+        NSR(x, top, 8, vb - top, gf);
+        NSR(x, top, 8, 2, gt);
+        for (y = top + 4; y < vb; y += 7) if (hash32((uint32_t)(c * 31 + y)) % 3u == 0u) NSR(x + 2, y, 4, 1, (now / 250u) % 2u ? gd : C_ORA);
+        break;
+    case GR_ICE: case GR_CRYSTAL:
+        NSR(x, top, 8, vb - top, gf);
+        NSR(x, top, 8, 3, gt);
+        if (c % 3 == 0) NSR(x + 2, top + 5, 2, 6, C_WHI);
+        NSR(x, top + 3, 8, 1, gd);
+        break;
+    case GR_CANDY:
+        for (y = top; y < vb; y += 4) NSR(x, y, 8, 4, (((y - top) / 4 + c) % 2) ? gt : gf);
+        NSR(x, top, 8, 2, gd);
+        break;
+    case GR_RAINBOW: {
+        static const uint16_t RB[6] = {RGB(255, 60, 60), RGB(255, 150, 0), RGB(255, 230, 0), RGB(60, 220, 80), RGB(60, 140, 255),
+                                       RGB(170, 80, 255)};
+        int k = (int)(now / 80u);
+        for (y = top; y < vb; y += 2) NSR(x, y, 8, 2, RB[((y - top) / 2 + c + k) % 6]);
+        break;
+    }
+    case GR_MOON:
+        NSR(x, top, 8, vb - top, gf);
+        NSR(x, top, 8, 2, gt);
+        if (c % 4 == 1) NSR(x + 1, top + 5, 5, 3, gd);
+        break;
+    default: NSR(x, top, 8, vb - top, gf); break;
+    }
+}
+static void st_pit(const stage_t *S, int x, int vb, uint32_t now, int c)
+{
+    switch (S->pit) {
+    case PIT_LAVA: NSR(x, vb - 8, 8, 8, C_ORA); NSR(x + ((int)(now / 120u) + c) % 6, vb - 9, 3, 2, C_YEL); break;
+    case PIT_WATER: NSR(x, vb - 8, 8, 8, RGB(40, 110, 230)); NSR(x + ((int)(now / 160u) + c) % 6, vb - 8, 4, 1, C_WHI); break;
+    case PIT_DARK: NSR(x, vb - 6, 8, 6, C_BLK); break;
+    default: break;
     }
 }
 
-/* far hills: a blocky ridge (4 px columns), scrolled slowly (parallax), with a lighter crest */
-static void px_hills(int base, int wo)
+/* the whole view: the stage, the level, its coins, blobs, boss, stars, the hero, sparks */
+static void draw_game(int vt, int vb, uint32_t now)
 {
-    int x;
-    for (x = 0; x < 240; x += 4) {
-        int u = x + wo / 3, h = 10 + ((u / 4 * 7) % 9) + (int)(10.0f * fm_sin_turns((float)u * 0.0045f) + 8.0f * fm_sin_turns((float)u * 0.011f));
-        if (h < 4) h = 4;
-        h &= ~1;
-        if (!in_canvas(base - h, h)) continue;
-        NSR(x, base - h, 4, h, RGB(56, 60, 150));
-        NSR(x, base - h, 4, 2, RGB(112, 120, 210));
-    }
-}
-
-/* the ground: grass on top, then a checkerboard (8 x 4 tiles) that scrolls with the run */
-static void px_ground(int gy, int bot, int wo)
-{
-    int y, x, row = 0;
-    NSR(0, gy, 240, 2, RGB(96, 232, 72));
-    NSR(0, gy + 2, 240, 1, RGB(24, 120, 32));
-    for (y = gy + 3; y < bot; y += 4, row++) {
-        int off = ((wo % 16) + 16) % 16;
-        if (!in_canvas(y, 4)) continue;
-        for (x = -off; x < 240; x += 8) {
-            int t = ((x + off) / 8 + row) & 1;
-            NSR(x, y, 8, 4, t ? RGB(210, 112, 40) : RGB(144, 64, 24));
+    const stage_t *S = &STAGE[gm.stage];
+    int c0 = (int)(gm.ws / 8.0f), sx0 = -(int)gm.ws % 8, i, k;
+    int oc0 = clip0, oc1 = clip1;
+    clip0 = vt; clip1 = vb + 1;
+    st_sky(S, vt, vb + 1);
+    st_back(S, vt, vb, (int)gm.ws, now);
+    st_amb(S, vt, vb, (int)gm.ws, now);
+    for (k = 0; k < 32; k++) {                                          /* the level's columns */
+        int c = c0 + k, x = sx0 + k * 8, pl, h = col_ground(c, gm.stage, &pl);
+        if (h) st_col(S, x, vb + 1 - h * 8, vb + 1, c, now);
+        else st_pit(S, x, vb + 1, now, c);
+        if (pl) {                                                       /* a floating platform: a row of blocks */
+            int py = vb + 1 - pl * 8;
+            NSR(x, py, 8, 6, C_BLK); NSR(x, py, 8, 5, rgb3(S->gt)); NSR(x + 1, py + 1, 6, 1, C_WHI);
+            if (c % 2) NSR(x, py, 1, 6, C_BLK);
         }
     }
-}
-
-/* ---- the characters: 10 original shapes (no game's characters): inside(kind, x, y) in the shape's own pixels */
-#define NCHR 10
-static const char *const CHR_NAME[NCHR] = {"CUBE", "DIAMOND", "SPIKE", "ORB", "HEXAGON", "CROSS", "STAR", "ARROW", "RING", "HOURGLASS"};
-static const uint8_t CHR_COL[NCHR][3] = {{255, 214, 40}, {255, 80, 80}, {90, 200, 255}, {255, 140, 20}, {80, 230, 120},
-                                         {240, 240, 240}, {255, 110, 180}, {60, 140, 255}, {200, 130, 255}, {160, 255, 90}};
-static int chr_in(int kind, float x, float y)
-{
-    float ax = fm_fabsf(x), ay = fm_fabsf(y), r2 = x * x + y * y;
-    switch (kind) {
-    case 0: return ax <= 7.0f && ay <= 7.0f;
-    case 1: return ax + ay <= 9.5f;
-    case 2: return y >= -9.0f && y <= 7.0f && ax <= (y + 9.0f) * 0.5f;
-    case 3: return r2 <= 56.0f;
-    case 4: return ay <= 7.0f && ax + ay * 0.5774f <= 8.0f;
-    case 5: return (ax <= 3.0f && ay <= 9.0f) || (ay <= 3.0f && ax <= 9.0f);
-    case 6: return ax * ay <= 7.0f && ax + ay <= 11.0f;
-    case 7: return (x >= -9.0f && x <= 0.0f && ay <= 3.0f) || (x > 0.0f && x <= 9.0f && ay <= (9.0f - x) * 0.9f);
-    case 8: return r2 >= 16.0f && r2 <= 64.0f;
-    default: return ay <= 8.0f && ax <= ay * 0.9f + 1.0f;
-    }
-}
-
-/* the character in 2 x 2 blocks: black outline, its colour, a light top-left, an eye */
-static void px_char(int kind, int cx, int cy, float ang)
-{
-    float c = fm_sin_turns(ang * 0.15915494f + 0.25f), s = fm_sin_turns(ang * 0.15915494f);
-    const uint8_t *fc = CHR_COL[kind];
-    uint16_t col = RGB(fc[0], fc[1], fc[2]), hi = RGB(255, 255, 230);
-    int dx, dy;
-    if (!in_canvas(cy - 14, 28)) return;
-    for (dy = -12; dy < 12; dy += 2)
-        for (dx = -12; dx < 12; dx += 2) {
-            float px = (float)dx + 1.0f, py = (float)dy + 1.0f;
-            float lx = px * c + py * s, ly = -px * s + py * c;
-            if (!chr_in(kind, lx, ly)) {                          /* outside: black where it borders the shape */
-                if (chr_in(kind, lx + 2.0f * c, ly - 2.0f * s) || chr_in(kind, lx - 2.0f * c, ly + 2.0f * s)
-                    || chr_in(kind, lx + 2.0f * s, ly + 2.0f * c) || chr_in(kind, lx - 2.0f * s, ly - 2.0f * c))
-                    NSR(cx + dx, cy + dy, 2, 2, C_BLK);
-                continue;
-            }
-            if (fm_fabsf(lx - 2.0f) < 1.5f && fm_fabsf(ly + 1.0f) < 1.5f) NSR(cx + dx, cy + dy, 2, 2, C_BLK);   /* the eye */
-            else if (!chr_in(kind, lx - 2.5f, ly - 2.5f)) NSR(cx + dx, cy + dy, 2, 2, hi);
-            else NSR(cx + dx, cy + dy, 2, 2, col);
-        }
-}
-
-static void px_spike(int x, int gy)
-{
-    int r;
-    for (r = 0; r < 12; r += 2) {
-        int w = 2 + r;
-        NSR(x + 6 - w / 2 - 1, gy - 12 + r, w + 2, 2, C_BLK);
-        NSR(x + 6 - w / 2, gy - 12 + r, w, 2, r < 4 ? C_WHI : C_GREY);
-        NSR(x + 6, gy - 12 + r, w / 2, 2, r < 4 ? C_GREY : RGB(104, 112, 140));
-    }
-}
-static void px_crate(int x, int gy)
-{
-    NSR(x, gy - 14, 14, 14, C_BLK);
-    NSR(x + 1, gy - 13, 12, 12, RGB(196, 120, 48));
-    NSR(x + 1, gy - 13, 12, 2, RGB(236, 168, 88));
-    NSR(x + 3, gy - 9, 8, 2, RGB(120, 64, 24));
-    NSR(x + 3, gy - 5, 8, 2, RGB(120, 64, 24));
-}
-
-static const struct { uint8_t type; int16_t x; } OBST[5] = {{0, 40}, {0, 56}, {1, 130}, {0, 200}, {1, 262}};
-
-/* an obstacle under the runner at column cx, the ground scrolled by wo px (it does not stop on one) */
-static int obst_near(int wo, int cx)
-{
-    int i, per = 300;
-    for (i = 0; i < 5; i++) {
-        int d = ((OBST[i].x - wo) % per + per) % per - 40 + 6 - cx;
-        if (d > -26 && d < 26) return 1;
-    }
-    return 0;
-}
-
-/* the runner: the ground at row gy, the character at column cx; the ground scrolled by wo px, the character hops over each
- * obstacle (and when a chord is played) */
-static void px_runner(int gy, int cx, int wo, int with_obst, uint32_t now)
-{
-    int i, per = 300;
-    float h = 0.0f, ang = 0.0f;
-    uint32_t u = now - hop_at;
-    if (with_obst)
-        for (i = 0; i < 5; i++) {
-            int x = ((OBST[i].x - wo) % per + per) % per - 40, ox = x + 6, d = ox - cx;
-            if (OBST[i].type == 0) px_spike(x, gy); else px_crate(x, gy);
-            if (d > -24 && d < 24) {
-                float k = 1.0f - (float)(d * d) / 576.0f, a = (float)(24 - d) / 48.0f * 1.5708f;
-                if (k * 20.0f > h) { h = k * 20.0f; ang = a; }
+    {   /* the level's coin rows */
+        int seg;
+        for (seg = (int)(gm.ws / 64.0f) - 1; seg <= (int)((gm.ws + 240.0f) / 64.0f); seg++) {
+            if (seg < 0 || !seg_coins(seg, gm.stage) || (seg * 64) % LV_W >= LV_W - ARENA) continue;
+            for (k = 0; k < 3; k++) {
+                int cxw = seg * 64 + 20 + k * 12, pc, hc = col_ground(cxw / 8, gm.stage, &pc);
+                uint32_t bit = 1u << ((uint32_t)(seg & 31) * 3u % 32u + (uint32_t)k) % 32u;
+                if (gm.seg_taken[(seg >> 3) & 3] & bit) continue;
+                spr_draw(COIN[(now / 120u + (uint32_t)k) % 3u], 6, 8, cxw - (int)gm.ws - 6, vb + 1 - ((pc ? pc : hc) * 8 + 30) - 8, 2, 0);
             }
         }
-    if (u < 420u) {
-        float k = (float)u / 420.0f, hh = 16.0f * fm_sin_turns(k * 0.5f);
-        if (hh > h) { h = hh; ang = k * 1.5708f; }
     }
-    if (h < 0.5f) { ang = 0.0f; h = 0.0f; }
-    ang = (float)(int)(ang / 0.3927f) * 0.3927f;          /* the turn in eighths of a quarter: a sprite's frames */
-    if (!with_obst || run.speed > 0.5f)                  /* the speed lines, while it runs */
-        for (i = 1; i <= 3; i++) NSR(cx - 12 - i * 7, gy - 6 - (i & 1) * 4, 5 - i, 2, i == 1 ? C_WHI : C_GREY);
-    px_char(set.chr < NCHR ? set.chr : 0, cx, gy - 10 - ((int)(h + 0.5f) & ~1), ang);
+    for (i = 0; i < GM_COINS; i++)
+        if (gm.coin[i].on) spr_draw(COIN[(now / 120u + (uint32_t)i) % 3u], 6, 8, (int)(gm.coin[i].wx - gm.ws) - 6, vb + 1 - (int)gm.coin[i].y - 8, 2, 0);
+    spr_pal[1] = rgb3(S->en); spr_pal[2] = C_WHI;
+    for (i = 0; i < GM_ENEMY; i++)
+        if (gm.en[i].on) {
+            int pe, he = gm_ground_at(gm.en[i].wx, &pe);
+            spr_draw(BLOB[gm.en[i].squash ? 2 : (int)(gm.en[i].t * 4.0f) & 1], 8, 7, (int)(gm.en[i].wx - gm.ws) - 8, vb + 1 - he * 8 - 14, 2, 0);
+        }
+    if (gm.boss) {
+        int bx = 180, by = vb + 1 - (int)gm.boss_y - 48;
+        spr_pal[1] = gm.boss_flash > 0.0f ? C_WHI : rgb3(S->b1); spr_pal[2] = rgb3(S->b2); spr_pal[3] = C_YEL;
+        spr_draw(S->btype == BOSS_ROBOT ? ROBOT : KING, 16, 16, bx, by, 3, 1);
+        if (gm.boss == 1) {                                             /* its life */
+            NSR(150, vt + 17, 84, 8, C_BLK);
+            NSR(152, vt + 19, 80 * gm.boss_hp / (gm.boss_max ? gm.boss_max : 1), 4, C_RED);
+        }
+    }
+    for (i = 0; i < GM_SHOT; i++)
+        if (gm.shot[i].on) {
+            if (gm.shot[i].boss) spr_draw(ORB, 4, 4, (int)gm.shot[i].x - 4, vb + 1 - (int)gm.shot[i].y - 4, 2, 0);
+            else spr_draw(STAR, 5, 5, (int)gm.shot[i].x - 5, vb + 1 - (int)gm.shot[i].y - 5, 2, 0);
+        }
+    {   /* the hero */
+        int ch = set.chr < 10 ? set.chr : 0, fr = !gm.ground ? 3 : run.speed > 0.4f ? 1 + ((int)gm.anim & 1) : 0;
+        spr_pal[1] = rgb3(HERO_COL[ch][0]); spr_pal[2] = rgb3(HERO_COL[ch][1]); spr_pal[3] = rgb3(HERO_COL[ch][2]);
+        spr_draw(HERO[fr], 10, 14, HERO_X - 10, vb + 1 - (int)gm.hy - 28, 2, 0);
+    }
+    for (i = 0; i < GM_PART; i++)
+        if (gm.part[i].life > 0.0f) NSR((int)gm.part[i].x, vb + 1 - (int)gm.part[i].y, 2, 2, gm.part[i].c);
+    if (now - gm.banner_at < 1800u && (now / 200u) % 4u) {             /* the level's name */
+        char t[40], n[12];
+        int32_t w;
+        t[0] = 0; text_cat(t, "WORLD "); int_text((int32_t)(gm.level / 4 + 1), n); text_cat(t, n); text_cat(t, "-");
+        int_text((int32_t)(gm.level % 4 + 1), n); text_cat(t, n); text_cat(t, " "); text_cat(t, S->name);
+        w = text_w(&FONT_XS, t);
+        if (vt + 40 >= g_oy && vt + 40 < g_oy + 120) {
+            cv_rect((240 - w) / 2 - 4, vt + 38 - g_oy, w + 8, 14, C_BLK);
+            cv_text((240 - w) / 2 + 1, vt + 40 - g_oy, &FONT_XS, t, C_YEL);
+        }
+    }
+    clip0 = oc0; clip1 = oc1;
 }
 
-/* a box's frame */
+/* a text shortened (from its end) until it fits w pixels */
+static void fit_text(char *b, const felucca_font_t *f, int32_t w)
+{
+    int n = 0;
+    while (b[n]) n++;
+    while (n > 1 && text_w(f, b) > w) b[--n] = 0;
+}
+/* a box's frame (canvas rows) */
 static void box(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     cv_rect(x, y, w, 1, c); cv_rect(x, y + h - 1, w, 1, c);
@@ -1931,27 +2650,14 @@ static void bevel(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t face, uin
 {
     cv_rect(x, y, w, h, C_BLK);
     cv_rect(x + 1, y + 1, w - 2, h - 2, face);
-    cv_rect(x + 1, y + 1, w - 2, 2, hi); cv_rect(x + 1, y + 1, 2, h - 2, hi);
-    cv_rect(x + 1, y + h - 3, w - 2, 2, lo); cv_rect(x + w - 3, y + 1, 2, h - 2, lo);
+    cv_rect(x + 1, y + 1, w - 2, 1, hi); cv_rect(x + 1, y + 1, 1, h - 2, hi);
+    cv_rect(x + 1, y + h - 2, w - 2, 1, lo); cv_rect(x + w - 2, y + 1, 1, h - 2, lo);
 }
 /* text with a black drop shadow (canvas rows) */
 static int32_t stext(int32_t x, int32_t y, const felucca_font_t *f, const char *t, uint16_t c)
 {
     cv_text(x + 1, y + 1, f, t, C_BLK);
     return cv_text(x, y, f, t, c);
-}
-
-/* stars around (cx, cy) in screen rows, age ms old (a celebration) */
-static void party(int cx, int cy, uint32_t age)
-{
-    int i;
-    float k = (float)age / 1600.0f, r = 8.0f + 46.0f * (1.0f - (1.0f - clamp01(k)) * (1.0f - clamp01(k)));
-    for (i = 0; i < 12; i++) {
-        float a = (float)i / 12.0f + k * 0.15f;
-        int x = cx + ((int)(r * fm_sin_turns(a + 0.25f)) & ~1), y = cy + ((int)(r * 0.7f * fm_sin_turns(a)) & ~1) + (int)(20.0f * k * k);
-        uint16_t c = i % 3 == 0 ? C_YEL : i % 3 == 1 ? C_RED : C_CYA;
-        if (k < 0.85f || (age / 80u) % 2u) { NSR(x, y - 2, 2, 6, c); NSR(x - 2, y, 6, 2, c); }
-    }
 }
 
 /* ---- the info panel (the second canvas: y 0 = screen row 120): a console's dark panel, the page's tag, four knobs as
@@ -1971,9 +2677,11 @@ static void draw_bottom_text(void)
     t[0] = 0;
     if (set.page == PG_STUDIO) {
         text_cat(t, wk_edited ? "EDITED - SAVE KEEPS IT" : drum_name[set.dpat]);
+    } else if (set.page != PG_MAIN) {
+        text_cat(t, STAGE[cur_stage()].name);
     } else {
-        if (set.carp) { text_cat(t, "ARP "); text_cat(t, set.rhythm ? RHYTHM_NAME[set.rhythm] : "ALL NOTES"); }
-        else text_cat(t, set.rhythm ? RHYTHM_NAME[set.rhythm] : "RHYTHM OFF");
+        if (set.carp) { text_cat(t, "ARP "); text_cat(t, RATE_NAME[set.crate]); text_cat(t, " "); }
+        text_cat(t, set.rhythm ? RHYTHM_NAME[set.rhythm] : "HELD");
         if (set.drums && set.rhythm) text_cat(t, " + DRUMS");
     }
     fit_text(t, &FONT_T, 232 - 16 - tw);
@@ -1995,7 +2703,6 @@ static void draw_bottom_text(void)
     }
 }
 
-#define TITLE_1 "PIXEL"                 /* the name (the intro's title is tools/gen_title.py's picture) */
 #include "title_data.h"
 
 /* the face's colour by its row (in its word): yellow, orange, red, with a light band sweeping across at t (ms) */
@@ -2024,42 +2731,37 @@ static void title_draw(int ty, uint32_t t)
     }
 }
 
-/* ---- the intro (and the help: HOME held): the sky, the sun rising behind the hills, a checkered floor rushing towards us,
- * the title dropping in with a bounce, the runner crossing */
+/* ---- the intro (and the help: HOME held): the grassland, the title dropping in with a bounce, the hero running across
+ * and jumping for coins */
 static void px_splash(int bottom)
 {
-    const int hy = 150;
     float ms = sc.title_ms;
     uint32_t now = plat_ms(), t = (uint32_t)(ms < 0.0f ? 0.0f : ms);
-    int cx, y, ty;
+    const stage_t *S = &STAGE[ST_GRASS];
+    int ty, i, k, hx;
     char ln[40];
     g_oy = bottom ? 120 : 0;
-    px_sky(hy);
-    px_clouds(0, now, 20, 60);
-    {   /* the sun rises */
-        float e = clamp01((ms - 100.0f) / 1100.0f);
-        e = 1.0f - (1.0f - e) * (1.0f - e) * (1.0f - e);
-        px_sun(184, (hy - 18 + (int)((1.0f - e) * 60.0f)) & ~3, 24);
+    clip0 = 0; clip1 = 240;
+    st_sky(S, 0, 240);
+    st_back(S, 0, 200, (int)(now / 12u), now);
+    st_amb(S, 0, 200, (int)(now / 12u), now);
+    for (k = 0; k < 31; k++) st_col(S, k * 8 - (int)(now / 12u) % 8, 200, 240, k + (int)(now / 96u), now);
+    hx = (int)(-20.0f + ms * 0.09f);
+    if (hx > 120) hx = 120;
+    for (i = 0; i < 5; i++) {                                           /* coins in an arc, taken as the hero passes */
+        int cx = 140 + i * 16, cy = 180 - (i == 1 || i == 3 ? 8 : i == 2 ? 12 : 0);
+        if (hx + 70 < cx) spr_draw(COIN[(now / 120u + (uint32_t)i) % 3u], 6, 8, cx, cy, 2, 0);
     }
-    px_hills(hy, (int)(now / 30u));
-    for (y = hy; y < 240; y += 2) {                              /* the floor: checkers in perspective, rushing towards us */
-        int z = y - hy + 6, w = 4 + z * 2, ph = (int)((float)(now % 600u) / 600.0f * 2.0f * (float)w), x0, row;
-        if (!in_canvas(y, 2)) continue;
-        row = ((y - hy) * 8 / (z + 8) + (int)(now / 300u)) & 1;
-        (void)ph;
-        for (x0 = 120 - ((240 / w + 2) / 2) * w; x0 < 240; x0 += w) {
-            int tile = ((x0 - 120) / w + 64 + row) & 1;
-            NSR(x0, y, w, 2, tile ? RGB(232, 120, 40) : RGB(120, 40, 120));
-        }
+    {
+        float ph = (float)(now % 700u) / 700.0f;
+        int jy = (int)(26.0f * fm_sin_turns(ph * 0.5f)), ch = set.chr < 10 ? set.chr : 0;
+        spr_pal[1] = rgb3(HERO_COL[ch][0]); spr_pal[2] = rgb3(HERO_COL[ch][1]); spr_pal[3] = rgb3(HERO_COL[ch][2]);
+        spr_draw(HERO[jy > 4 ? 3 : 1 + (int)(now / 120u) % 2], 10, 14, hx, 172 - jy, 2, 0);
     }
-    NSR(0, hy, 240, 2, RGB(96, 232, 72));
-    cx = (int)(-20.0f + ms * 0.115f);
-    if (cx > 270) cx = 270;
-    px_runner(216, cx & ~1, 0, 0, now);
     {   /* the title drops in with a bounce */
-        float k = clamp01((ms - 250.0f) / 700.0f), q;
-        k = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
-        q = 1.0f - k;
+        float kk = clamp01((ms - 250.0f) / 700.0f), q;
+        kk = 1.0f - (1.0f - kk) * (1.0f - kk) * (1.0f - kk);
+        q = 1.0f - kk;
         ty = 14 - (int)(q * 120.0f) + (int)(8.0f * fm_sin_turns(q * 1.5f) * q);
         title_draw(ty & ~1, t);
         if (ms > 900.0f) {                                     /* by swtdr34mz, in the title's type */
@@ -2071,50 +2773,43 @@ static void px_splash(int bottom)
             }
         }
     }
-    if (t > 1100u && !ui.help) {                                      /* the credit */
-        NSR(0, 226, 240, 14, C_NAVY);
+    if (t > 1100u && !ui.help && bottom) {                                      /* the credit */
+        cv_rect(0, 226 - 120, 240, 14, C_NAVY);
         ln[0] = 0; text_cat(ln, (t / 3000u) % 2u ? "TITLE TYPE: PRESS START 2P" : "BASED ON BLOP BY OBSIMO");
-        if (226 >= g_oy) cv_text((240 - text_w(&FONT_XS, ln)) / 2, 227 - g_oy, &FONT_XS, ln, C_GREY);
+        cv_text((240 - text_w(&FONT_XS, ln)) / 2, 227 - 120, &FONT_XS, ln, C_GREY);
     }
     if (ui.help && t > 600u && bottom) {                             /* the help (HOME held): the player's progress */
         char a[40], n[12];
-        cv_rect(6, 176 - 120, 228, 58, C_BLK);
-        cv_rect(8, 178 - 120, 224, 54, C_NAVY);
-        box(8, 178 - 120, 224, 54, C_YEL);
+        cv_rect(6, 166 - 120, 228, 68, C_BLK);
+        cv_rect(8, 168 - 120, 224, 64, C_NAVY);
+        box(8, 168 - 120, 224, 64, C_YEL);
+        a[0] = 0; text_cat(a, "COINS "); int_text((int32_t)gm.coins, n); text_cat(a, n);
+        text_cat(a, "  WORLD "); int_text((int32_t)(gm.level / 4 + 1), n); text_cat(a, n); text_cat(a, "-");
+        int_text((int32_t)(gm.level % 4 + 1), n); text_cat(a, n);
+        cv_text((240 - text_w(&FONT_XS, a)) / 2, 173 - 120, &FONT_XS, a, C_YEL);
         a[0] = 0; text_cat(a, "TOTAL "); int_text((int32_t)prog.metres, n); text_cat(a, n);
         text_cat(a, " M  BEST "); int_text((int32_t)prog.best, n); text_cat(a, n); text_cat(a, " M");
-        cv_text((240 - text_w(&FONT_XS, a)) / 2, 183 - 120, &FONT_XS, a, C_YEL);
-        a[0] = 0; text_cat(a, "CHARACTERS "); int_text(chars_unlocked(), n); text_cat(a, n);
+        cv_text((240 - text_w(&FONT_XS, a)) / 2, 188 - 120, &FONT_XS, a, C_WHI);
+        a[0] = 0; text_cat(a, "HEROES "); int_text(chars_unlocked(), n); text_cat(a, n);
         text_cat(a, "/10  MISSIONS "); int_text((int32_t)prog.missions, n); text_cat(a, n);
-        cv_text((240 - text_w(&FONT_XS, a)) / 2, 199 - 120, &FONT_XS, a, C_WHI);
+        cv_text((240 - text_w(&FONT_XS, a)) / 2, 203 - 120, &FONT_XS, a, C_WHI);
         a[0] = 0; text_cat(a, "SETS PLAYED "); int_text(popcount8(prog.songs), n); text_cat(a, n);
         text_cat(a, "/"); int_text(NGRID, n); text_cat(a, n);
-        cv_text((240 - text_w(&FONT_XS, a)) / 2, 215 - 120, &FONT_XS, a, C_CYA);
+        cv_text((240 - text_w(&FONT_XS, a)) / 2, 218 - 120, &FONT_XS, a, C_CYA);
     }
 }
 
-/* ---- the DRUM STUDIO (the first canvas): the four tracks' 16 steps, the track being edited lit, the step playing */
+/* ---- the DRUM STUDIO's grid (the first canvas): the four tracks' 16 steps, the track being edited lit, the step playing */
 static void draw_studio(uint32_t now)
 {
     int t, i, ps;
     uint32_t at;
     char b[32];
-    cv_rect(0, 0, 240, 120, C_NAVY);
-    cv_rect(0, 0, 240, 22, C_BLK);
-    cv_rect(0, 22, 240, 1, C_YEL);
-    if (now < ui.msg_until) {
-        int32_t x = stext(8, 4, &FONT_XS, ui.msg[0], C_WHI);
-        stext(x + 6, 4, &FONT_XS, ui.msg[1], C_YEL);
-    } else {
-        b[0] = 0; text_cat(b, drum_name[set.dpat]); if (wk_edited) text_cat(b, " *");
-        stext(8, 4, &FONT_XS, b, C_WHI);
-        b[0] = 0; text_cat(b, KIT_NAME[wk.kit]); text_cat(b, " KIT");
-        stext(232 - text_w(&FONT_XS, b), 4, &FONT_XS, b, C_CYA);
-    }
+    cv_rect(0, 23, 240, 89, C_NAVY);
     ps = eng_last_step(&at, 0);
     if (!(preview || active) || now - at > 400u) ps = -1;
     for (t = 0; t < NTRACK; t++) {
-        int32_t y = 28 + t * 19, sel = t == set.dtrack;
+        int32_t y = 27 + t * 18, sel = t == set.dtrack;
         if (sel) cv_rect(0, y - 2, 240, 18, RGB(40, 48, 120));
         cv_text(4, y + 1, &FONT_T, TRACK_NAME[t], sel ? C_YEL : C_GREY);
         for (i = 0; i < 16; i++) {
@@ -2130,62 +2825,34 @@ static void draw_studio(uint32_t now)
             if (i == ps) box(x, y, 11, 14, C_WHI);
         }
     }
-    cv_text(4, 106, &FONT_T, "PLAY:LISTEN  REC:CLEAR  SAVE:KEEP", C_GREY);
+    b[0] = 0; text_cat(b, "PLAY:LISTEN  REC:CLEAR  SAVE:KEEP");
+    cv_text(4, 98, &FONT_T, b, C_GREY);
 }
 
-/* ---- the main screen: the set's chords as console buttons (the one playing lit yellow), the chord big, the runner below.
- * bottom = 0: the upper canvas (screen rows 0..119), 1: the lower (120..239). */
-static void draw_screen(int bottom)
+/* ---- the header (the first canvas): the set (or a message), its key; the loop's bars under it */
+static void draw_header(uint32_t now)
 {
-    int n = grid_n[set.grid], cs = -1, cvar = 0, i;
-    uint32_t now = plat_ms();
     char b[24], t[32];
-    g_oy = bottom ? 120 : 0;
-    if (!bottom && set.page == PG_STUDIO) { draw_studio(now); return; }
-    px_sky(HY);
-    if (active && cur_idx >= 0) { int o; cs = key_slot(cur_idx, &cvar, &o); }
-    if (bottom) {
-        int32_t x;
-        px_clouds((int)run.scroll, now, 128, 20);
-        px_sun(206, HY - 26, 14);
-        px_hills(HY, (int)run.scroll);
-        px_ground(HY, 186, (int)run.scroll);
-        px_runner(HY, 146, (int)run.scroll, 1, now);
-        if (now - run.party_at < 1600u && run.party_at) party(146, HY - 14, now - run.party_at);
-        if (active) stext(8, 2, text_w(&FONT_L, chord_txt) <= 100 ? &FONT_L : &FONT_B, chord_txt, C_WHI);
-        x = stext(8, 36, &FONT_XS, SOUND_NAME[set.sound], C_YEL);
-        if (set.carp) {
-            x = stext(x + 8, 36, &FONT_XS, "ARP", C_WHI);
-            stext(x + 5, 36, &FONT_XS, RATE_NAME[set.crate], C_CYA);
-        }
-        {   /* the metres: this run's (yellow) while it runs, else all of them; under them the mission and how far it is */
-            char m[40], pr[12];
-            int32_t w;
-            b[0] = 0;
-            if (run.running && run.run_m >= 1.0f) { text_cat(b, "RUN "); int_text((int32_t)run.run_m, t); text_cat(b, t); text_cat(b, " M"); }
-            else { int_text((int32_t)prog.metres, b); text_cat(b, " M"); }
-            stext(232 - text_w(&FONT_S, b), 1, &FONT_S, b, run.running ? C_YEL : C_WHI);
-            mission_text(m, pr);
-            fit_text(m, &FONT_T, 150);
-            w = text_w(&FONT_T, m) + (pr[0] ? text_w(&FONT_T, pr) + 5 : 0);
-            cv_rect(232 - w - 8, 22, 4, 4, C_RED);
-            x = stext(232 - w, 18, &FONT_T, m, C_WHI);
-            if (pr[0]) stext(x + 5, 18, &FONT_T, pr, C_YEL);
-        }
-        return;
-    }
-    cv_rect(0, 0, 240, 22, C_BLK);                               /* the header: a black bar, a yellow rule */
-    if (now < ui.msg_until) {                                   /* a message (SET ..., OCTAVE ...) takes the header's place */
+    cv_rect(0, 0, 240, 22, C_BLK);
+    if (now < ui.msg_until) {
         int32_t x = cv_text(8, 0, &FONT_XS, ui.msg[0], C_WHI);
         cv_text(x + 6, 0, &FONT_XS, ui.msg[1], C_YEL);
+    } else if (set.page == PG_STUDIO) {
+        b[0] = 0; text_cat(b, drum_name[set.dpat]); if (wk_edited) text_cat(b, " *");
+        cv_text(8, 0, &FONT_XS, "DRUM STUDIO", C_YEL);
+        cv_text(8, 10, &FONT_XS, b, C_WHI);
+        t[0] = 0; text_cat(t, KIT_NAME[wk.kit]); text_cat(t, " KIT");
+        cv_text(232 - text_w(&FONT_XS, t), 0, &FONT_XS, t, C_CYA);
     } else {
         cv_text(8, 0, &FONT_XS, GRID_DEF[set.grid].name, C_WHI);
         cv_text(8, 10, &FONT_XS, GRID_DEF[set.grid].by, C_CYA);
         t[0] = 0; text_cat(t, "KEY "); text_cat(t, NOTE[set.key]);
         cv_text(232 - text_w(&FONT_XS, t), 0, &FONT_XS, t, C_YEL);
+        t[0] = 0; text_cat(t, SCALE_DEF[GRID_DEF[set.grid].scale].name);
+        if (lp.st == LP_OFF && set.assist != 2) cv_text(232 - text_w(&FONT_T, t), 11, &FONT_T, t, C_GREY);
     }
     cv_rect(0, 22, 240, 1, C_YEL);
-    if (lp.st == LP_OFF && set.assist == 2) {   /* GUIDE: the lit keys hit */
+    if (lp.st == LP_OFF && set.assist == 2 && set.page != PG_STUDIO) {   /* GUIDE: the lit keys hit */
         t[0] = 0; text_cat(t, "GUIDE  HITS "); int_text((int32_t)gd.hits, b); text_cat(t, b);
         cv_text(232 - text_w(&FONT_T, t), 11, &FONT_T, t, C_YEL);
     }
@@ -2209,7 +2876,7 @@ static void draw_screen(int bottom)
         if (t[0]) cv_text(232 - text_w(&FONT_T, t), 11, &FONT_T, t, lc);
         if (nb < 1) nb = 1;
         sw = (224 - (nb - 1) * 2) / nb;
-        for (bi = 0; bi < nb; bi++) {           /* the bars: dark, filled as they play */
+        for (bi = 0; bi < nb; bi++) {
             float f = pos * (float)nb - (float)bi;
             int32_t bx = 8 + bi * (sw + 2);
             f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
@@ -2217,25 +2884,73 @@ static void draw_screen(int bottom)
             if (f > 0.0f) cv_rect(bx, 21, (int32_t)((float)sw * f), 3, lc);
         }
     }
+}
+
+/* text in screen rows, only where it fits this canvas whole */
+static int32_t hud_text(int32_t x, int y, const felucca_font_t *f, const char *t, uint16_t c, int h)
+{
+    if (y < g_oy || y + h > g_oy + 120) return x + text_w(f, t);
+    return stext(x, y - g_oy, f, t, c);
+}
+/* ---- the game's own words over the view: the chord big, the coins and the world, the mission */
+static void draw_hud(int vt, uint32_t now)
+{
+    char b[24], t[40], m[40], pr[12];
+    int32_t x, w;
+    if (active && set.page != PG_STUDIO) hud_text(6, vt + 4, text_w(&FONT_L, chord_txt) <= 110 ? &FONT_L : &FONT_B, chord_txt, C_WHI, 32);
+    spr_draw(COIN[(now / 150u) % 3u], 6, 8, 160, vt + 4, 1, 0);
+    t[0] = 0; text_cat(t, "x"); int_text((int32_t)gm.coins, b); text_cat(t, b);
+    hud_text(168, vt + 2, &FONT_XS, t, C_WHI, 12);
+    t[0] = 0; text_cat(t, "W"); int_text((int32_t)(gm.level / 4 + 1), b); text_cat(t, b); text_cat(t, "-");
+    int_text((int32_t)(gm.level % 4 + 1), b); text_cat(t, b);
+    hud_text(234 - text_w(&FONT_XS, t), vt + 2, &FONT_XS, t, C_YEL, 12);
+    if (gm.boss || set.page == PG_STUDIO) return;
+    mission_text(m, pr);
+    fit_text(m, &FONT_T, 150);
+    w = text_w(&FONT_T, m) + (pr[0] ? text_w(&FONT_T, pr) + 5 : 0);
+    x = hud_text(234 - w, vt + 16, &FONT_T, m, C_WHI, 12);
+    if (pr[0]) hud_text(x + 5, vt + 16, &FONT_T, pr, C_YEL, 12);
+}
+
+/* ---- the chords (the second canvas, screen rows 150..185): small console buttons, the one playing lit */
+static void draw_chords(void)
+{
+    int n = grid_n[set.grid], cs = -1, cvar = 0, i, rows = n <= 4 ? 1 : 2;
+    char b[20];
+    cv_rect(0, 150 - 120, 240, 36, C_NAVY);
+    if (active && cur_idx >= 0) { int o; cs = key_slot(cur_idx, &cvar, &o); }
     for (i = 0; i < n; i++) {
-        int one = n <= 4, sel = i == cs;
-        int32_t x = 6 + (one ? i : i % 4) * 58, y = one ? 34 : 28 + (i / 4) * 45, w = 54, h = one ? 62 : 42, tw, fh;
-        const felucca_font_t *f = &FONT_L;
+        int sel = i == cs;
+        int32_t x = 4 + (i % 4) * 58, y = 151 - 120 + (rows == 1 ? 0 : (i / 4) * 17), w = 56, h = rows == 1 ? 34 : 16, tw;
+        const felucca_font_t *f = rows == 1 ? &FONT_S : &FONT_XS;
         chord_t c = slot_chord(i, 0, 0);
         const char *s;
         chord_name(&c, b);
         s = sel ? chord_txt : b;
-        if (text_w(f, s) > w - 8) f = &FONT_S;
+        if (text_w(f, s) > w - 12) f = &FONT_XS;
         tw = text_w(f, s);
-        fh = f == &FONT_L ? 30 : 16;
         if (sel) bevel(x, y, w, h, C_YEL, RGB(255, 250, 190), RGB(208, 120, 16));
         else bevel(x, y, w, h, RGB(36, 48, 140), RGB(88, 120, 216), RGB(12, 16, 64));
-        t[0] = (char)('1' + i); t[1] = 0;
-        cv_text(x + 5, y + 3, &FONT_T, t, sel ? C_BLK : C_GREY);
-        if (sel) cv_text(x + (w - tw) / 2, y + (h - fh) / 2 + 2, f, s, C_BLK);
-        else stext(x + (w - tw) / 2, y + (h - fh) / 2 + 2, f, s, C_WHI);
+        { char nb[2]; nb[0] = (char)('1' + i); nb[1] = 0; cv_text(x + 3, y + 2, &FONT_T, nb, sel ? C_BLK : C_GREY); }
+        cv_text(x + 8 + (w - 8 - tw) / 2, y + (h - (f == &FONT_S ? 16 : 12)) / 2, f, s, sel ? C_BLK : C_WHI);
     }
-    if (now < toast.until) {   /* a celebration: a new character, a mission done, a best run */
+}
+
+/* ---- the screen: bottom = 0: the upper canvas (screen rows 0..119), 1: the lower (120..239) */
+static void draw_screen(int bottom)
+{
+    uint32_t now = plat_ms();
+    int vt = gm_vt(), vb = gm_vb();
+    g_oy = bottom ? 120 : 0;
+    clip0 = 0; clip1 = 240;
+    draw_game(vt, vb, now);
+    if (!bottom) {
+        draw_header(now);
+        if (set.page == PG_STUDIO) draw_studio(now);
+    }
+    draw_hud(vt, now);
+    if (bottom && set.page != PG_STUDIO) draw_chords();
+    if (now < toast.until && !bottom) {   /* a celebration: a new hero, a mission done, a boss defeated */
         uint32_t age = now - toast.at;
         int32_t bw = 204, bh = 52, bx = 18, by = 40 + (age < 200u ? (int32_t)((200u - age) / 10u) & ~1 : 0);
         uint16_t bc = (now / 150u) % 2u ? C_YEL : C_RED;
@@ -2248,8 +2963,8 @@ static void draw_screen(int bottom)
 }
 
 
-/* the first screen at boot (the platform's splash, while the FM-1 starts): the intro's very first picture (sky, sun, floor;
- * the title is still above the screen), so the start runs on into the animation without any other screen */
+/* the first screen at boot (the platform's splash, while the FM-1 starts): the intro's very first picture (the title is
+ * still above the screen), so the start runs on into the animation without any other screen */
 void app_splash(void)
 {
     scene_init();
@@ -2274,6 +2989,7 @@ void app_frame(void)
         ui.frame_at = now;
         scene_step(now, dt);
         game_step(now, dt);
+        gm_step(now, dt);
         {
             int over = sc.title < 0.5f;     /* the minimal screen; the intro and the help keep the old picture */
             cv_begin(240, 120, 0);
@@ -2330,6 +3046,7 @@ int app_expect(const char *what, int *got)
     else if (!strncmp(what, "step", 4) && what[4] >= '0' && what[4] <= '9') *got = wk.st[set.dtrack][atoi(what + 4) & 15];
     else if (!strncmp(what, "used", 4) && what[4] >= '0' && what[4] <= '9') *got = user.g[atoi(what + 4) % NUSER].used;
     else if (!strcmp(what, "crush")) *got = set.crush;
+    else if (!strcmp(what, "mfollow")) *got = set.mfollow;
     else if (!strcmp(what, "assist_keys")) *got = (int)as_keys;
     else if (!strcmp(what, "guide_key")) *got = gd.key;
     else if (!strcmp(what, "guide_next")) *got = gd.next_key;

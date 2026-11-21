@@ -59,12 +59,12 @@ static const sound_t SOUNDS[NSOUND] = {
 /* the melody's presets (MELODY page, PRESET): the value is the sound + 1 (0 = as the chords); all of them */
 static const uint8_t MEL_PRESET[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
 #define NMEL_PRESET ((int)(sizeof MEL_PRESET / sizeof MEL_PRESET[0]))
-#define NRHYTHM 9
+#define NRHYTHM 12
 #define RH_FULL 8                        /* FULL: the chord held and latched, the drums and the bass on */
 static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "OFFBEAT", "PUMP", "SYNCOPATED", "TRESILLO", "HALF-TIME",
-                                                 "FULL"};
+                                                 "FULL", "STACCATO", "GALLOP", "STABS"};
 /* the order ALGORITHM turns through them */
-static const uint8_t RHYTHM_ORDER[NRHYTHM] = {0, RH_FULL, 1, 2, 3, 4, 5, 6, 7};
+static const uint8_t RHYTHM_ORDER[NRHYTHM] = {0, RH_FULL, 1, 2, 9, 3, 4, 5, 11, 6, 10, 7};
 /* 16 steps: X accent, x soft, - tie, . rest ("" = held while the key is down; "=" = FULL: held until the key again) */
 static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTHM] = {
     {"", 0.0f, 0.0f, 0.0f},
@@ -76,39 +76,75 @@ static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTH
     {"X--x--x-X--x--x-", 0.7f, 0.0f, 0.0f},
     {"X-------x-----x-", 0.9f, 0.0f, 0.0f},
     {"=", 0.0f, 0.0f, 0.0f},
+    {"X.x.X.x.X.x.X.x.", 0.22f, 0.0f, 0.0f},     /* STACCATO: short 8-bit chord hits */
+    {"X.xxX.xxX.xxX.xx", 0.35f, 0.0f, 0.0f},     /* GALLOP: a fortress's ride */
+    {"X.....X.....X...", 0.3f, 0.0f, 0.0f},      /* STABS: short hits across the bar */
 };
+/* the sets' scales (the melody's notes): their steps above the key */
+enum { SC_AUTO, SC_MAJOR, SC_MINOR, SC_HARM, SC_DORIAN, SC_MIXO, SC_PHRYG, SC_PHRYGDOM, SC_LYDIAN, SC_MAJPENTA, SC_MINPENTA,
+       SC_BLUES, NSCALE };
+static const struct { const char *name; uint8_t n; int8_t iv[7]; } SCALE_DEF[NSCALE] = {
+    {"AUTO", 7, {0, 2, 4, 5, 7, 9, 11}}, {"MAJOR", 7, {0, 2, 4, 5, 7, 9, 11}}, {"MINOR", 7, {0, 2, 3, 5, 7, 8, 10}},
+    {"HARMONIC MINOR", 7, {0, 2, 3, 5, 7, 8, 11}}, {"DORIAN", 7, {0, 2, 3, 5, 7, 9, 10}}, {"MIXOLYDIAN", 7, {0, 2, 4, 5, 7, 9, 10}},
+    {"PHRYGIAN", 7, {0, 1, 3, 5, 7, 8, 10}}, {"PHRYGIAN DOM", 7, {0, 1, 4, 5, 7, 8, 10}}, {"LYDIAN", 7, {0, 2, 4, 6, 7, 9, 11}},
+    {"MAJOR PENTA", 5, {0, 2, 4, 7, 9}}, {"MINOR PENTA", 5, {0, 3, 5, 7, 10}}, {"BLUES", 6, {0, 3, 5, 6, 7, 10}},
+};
+/* the stages the runner runs through (app.c draws them): a set's world on the main page, and one for each page */
+enum { ST_GRASS, ST_UNDER, ST_SKY, ST_SPEED, ST_FACTORY, ST_FIELD, ST_BLOCKS, ST_FORTRESS, ST_MEADOW, ST_LAVA, ST_CASTLE,
+       ST_BASE, ST_BEACH, ST_CRYSTAL, ST_TIME, ST_WATER, ST_CANDY, ST_SPACE, ST_CITY, ST_RAINBOW, ST_ICE, NSTAGE };
 #define NGRID 20
 /* the SETS: the chords of a tune, one per BLACK key from the left (up to 8); the white keys play a melody in the scale of the
  * chord that sounds. A chord is its semitones above the set's key + a quality (M maj, V dominant-major, m, D dom7, d dim,
  * s sus4, S sus2, a aug); key 0 = C .. 11 = B, rich the richness it starts with. The progressions are written by ear in the
- * style of famous video game tunes (a chord progression is no one's own), under names of their own.
+ * style of famous video game tunes (a chord progression is no one's own), under names of their own; each set is a level.
  * Then the set's own sound, set when it is chosen: the chords' sound, the melody's (0 = as the chords, else the sound + 1),
- * the bass's sound and riff, the chord rhythm (taken only when a rhythm plays), the drum groove, the tempo, lock (1: the
- * melody keeps the set's own scale), and the chip arpeggio (ARP mode, 0 = off, and its rate). */
+ * the bass's sound and riff, the chord rhythm, the drum groove, the tempo, the scale, the chip arpeggio (ARP mode, 0 = off,
+ * its rate), reverb, delay, crush, chorus (0..100), the melody's vibrato, its stage, and its GUIDE melody (1: a folk tune
+ * of its own, KORO in app.c; 0: one made up). */
 static const struct {
     const char *name, *by;
     uint8_t key, rich;
     const char *white;
-    uint8_t snd, msnd, bsnd, bmot, rhy, dpat, bpm, lock, arp, arate;
+    uint8_t snd, msnd, bsnd, bmot, rhy, dpat, bpm, scale, arp, arate, rev, del, crush, chorus, mvib, stage, guide;
 } GRID_DEF[NGRID] = {
-    {"PLUMBER OVERWORLD", "SUNNY PLATFORMER", 0, 0, "0M 5M 7D 9m 8M 10M", 0, 2, BASS_TRI, MOTIF_OCTAVES, 2, 0, 150, 0, ARP_UP, ARP_R_CHIP},
-    {"PIPE UNDERGROUND", "BELOW THE BRICKS", 0, 0, "0m 9m 10M 3M 5m 8M", 1, 1, BASS_TRI, MOTIF_CONTRE, 3, 6, 100, 0, 0, ARP_R_16},
-    {"SKY ATHLETIC", "BOUNCY SKY STAGE", 5, 0, "0M 9m 5M 7D 2m 4D", 9, 3, BASS_PULSE, MOTIF_GALOP, 5, 2, 120, 0, 0, ARP_R_16},
-    {"GREEN LOOP ZONE", "16-BIT SPEED STAGE", 0, 1, "0M 9m 2m 7D 4m 5M", 13, 15, BASS_FM, MOTIF_SYNCOPE, 5, 16, 140, 0, 0, ARP_R_16},
-    {"TOXIC PLANT", "FACTORY ZONE", 7, 0, "0m 8M 10M 5m 3M 2m", 13, 4, BASS_FM, MOTIF_ROULE, 2, 15, 150, 0, 0, ARP_R_16},
-    {"HEROS FIELD", "HEROIC OVERWORLD", 10, 0, "0M 10M 5M 8M 3M 2m", 0, 3, BASS_TRI, MOTIF_GALOP, 6, 1, 130, 0, 0, ARP_R_16},
-    {"BLOCK DROP", "FALLING BLOCKS", 9, 0, "0m 7M 5m 3M 10M 8M", 2, 2, BASS_TRI, MOTIF_OCTAVES, 2, 8, 150, 0, ARP_UP, ARP_R_CHIP},
-    {"ROBOT FORTRESS", "FORTRESS STAGE", 4, 0, "0m 8M 10M 7m 5m 3M", 5, 3, BASS_PULSE, MOTIF_ROULE, 2, 7, 150, 0, 0, ARP_R_16},
-    {"FIRST ROUTE", "FIRST JOURNEY", 2, 0, "0M 5M 7M 4m 9m 2m", 9, 1, BASS_TRI, MOTIF_OCTAVES, 1, 0, 120, 0, 0, ARP_R_16},
-    {"WILD ENCOUNTER", "WILD BATTLE", 4, 0, "0m 1M 3M 10M 8M 5m", 1, 3, BASS_TRI, MOTIF_ROULE, 2, 4, 150, 0, ARP_UP, ARP_R_CHIP},
-    {"NIGHT CASTLE", "CASTLE STAGE", 2, 0, "0m 10M 8M 7M 5m 3M", 12, 1, BASS_PULSE, MOTIF_OCTAVES, 2, 3, 150, 0, 0, ARP_R_16},
-    {"AIR BASE", "SOLDIER THEME", 3, 0, "0m 10M 8M 5m 3M 7M", 13, 14, BASS_FM, MOTIF_SYNCOPE, 5, 17, 130, 0, 0, ARP_R_16},
-    {"COAST DRIVE", "SEASIDE RACE", 5, 1, "0M 2m 4m 5M 7D 9m", 15, 15, BASS_PLUCK, MOTIF_SYNCOPE, 5, 5, 140, 0, 0, ARP_R_16},
-    {"CRYSTAL PRELUDE", "CRYSTAL HARP", 0, 0, "0M 9m 5M 7M 8M 10M", 11, 1, BASS_TRI, MOTIF_TENUE, 0, 9, 100, 0, ARP_UPDOWN2, ARP_R_16},
-    {"TIME CORRIDOR", "HALL OF TIME", 9, 1, "0m 5m 10D 3M 8M 2d 7D", 14, 11, BASS_ROND, MOTIF_SUIT, 6, 16, 120, 0, 0, ARP_R_16},
-    {"DEEP REEF", "UNDERWATER CAVE", 4, 2, "0M 5M 9m 7M", 8, 11, BASS_SUB, MOTIF_TENUE, 7, 11, 90, 0, 0, ARP_R_16},
-    {"DREAM GREENS", "DREAMY MEADOW", 7, 0, "0M 5M 7M 9m 2m 7D", 2, 2, BASS_TRI, MOTIF_OCTAVES, 3, 2, 140, 0, 0, ARP_R_16},
-    {"ALIEN CAVES", "ALIEN PLANET", 4, 0, "0m 8M 5m 1M 3M 10M", 10, 4, BASS_SUB, MOTIF_TENUE, 7, 12, 100, 0, 0, ARP_R_16},
-    {"CITY BRAWL", "NEON STREET", 9, 0, "0m 8M 3M 10M", 15, 15, BASS_FM, MOTIF_CONTRE, 4, 13, 128, 0, 0, ARP_R_16},
-    {"STAR ROAD", "RAINBOW RACE", 2, 0, "0M 4m 9m 5M 2m 7M", 8, 10, BASS_PULSE, MOTIF_SYNCOPE, 2, 5, 140, 0, ARP_UP2, ARP_R_16},
+    {"PLUMBER OVERWORLD", "GRASSLAND 1-1", 0, 0, "0M 5M 7D 9m 8M 10M", 0, 3, BASS_TRI, MOTIF_OCTAVES, 9, 0, 150, SC_MAJOR,
+     0, ARP_R_16, 10, 0, 0, 0, 0, ST_GRASS, 0},
+    {"PIPE UNDERGROUND", "UNDERGROUND", 0, 0, "0m 9m 10M 3M 5m 8M", 1, 12, BASS_TRI, MOTIF_CONTRE, 11, 6, 100, SC_BLUES,
+     0, ARP_R_16, 5, 35, 0, 0, 0, ST_UNDER, 0},
+    {"SKY ATHLETIC", "SKY LEVEL", 5, 0, "0M 9m 5M 7D 2m 4D", 9, 2, BASS_PULSE, MOTIF_GALOP, 5, 2, 120, SC_MAJPENTA,
+     0, ARP_R_16, 25, 15, 0, 20, 0, ST_SKY, 0},
+    {"GREEN LOOP ZONE", "SPEED ZONE", 0, 1, "0M 9m 2m 7D 4m 5M", 13, 15, BASS_FM, MOTIF_SYNCOPE, 3, 16, 150, SC_MAJOR,
+     0, ARP_R_16, 15, 0, 0, 30, 0, ST_SPEED, 0},
+    {"TOXIC PLANT", "FACTORY ZONE", 7, 0, "0m 8M 10M 5m 3M 2m", 12, 4, BASS_ACID, MOTIF_ROULE, 2, 15, 145, SC_DORIAN,
+     0, ARP_R_16, 10, 20, 25, 0, 0, ST_FACTORY, 0},
+    {"HEROS FIELD", "HERO ADVENTURE", 10, 0, "0M 10M 5M 8M 3M 2m", 2, 1, BASS_TRI, MOTIF_GALOP, 6, 1, 125, SC_MIXO,
+     0, ARP_R_16, 20, 0, 0, 0, 30, ST_FIELD, 0},
+    {"BLOCK DROP", "BLOCK WORLD", 9, 0, "0m 7M 5m 3M 10M 8M", 2, 1, BASS_TRI, MOTIF_OCTAVES, 1, 8, 150, SC_HARM,
+     0, ARP_R_16, 5, 0, 0, 0, 0, ST_BLOCKS, 1},
+    {"ROBOT FORTRESS", "ROBOT FORTRESS", 4, 0, "0m 8M 10M 7m 5m 3M", 5, 7, BASS_PULSE, MOTIF_ROULE, 10, 7, 155, SC_MINOR,
+     0, ARP_R_16, 10, 10, 15, 0, 0, ST_FORTRESS, 0},
+    {"FIRST ROUTE", "FIRST JOURNEY", 2, 0, "0M 5M 7M 4m 9m 2m", 11, 3, BASS_TRI, MOTIF_OCTAVES, 2, 18, 130, SC_MAJOR,
+     0, ARP_R_16, 15, 0, 0, 0, 0, ST_MEADOW, 0},
+    {"MAGMA RUSH", "LAVA LEVEL", 4, 0, "0m 1M 3M 10M 8M 5m", 1, 4, BASS_PULSE, MOTIF_ROULE, RH_FULL, 4, 160, SC_PHRYGDOM,
+     ARP_UP, ARP_R_CHIP, 10, 0, 30, 0, 20, ST_LAVA, 0},
+    {"NIGHT CASTLE", "BOSS CASTLE", 2, 0, "0m 10M 8M 7M 5m 3M", 4, 13, BASS_PULSE, MOTIF_GALOP, 4, 3, 140, SC_HARM,
+     0, ARP_R_16, 45, 0, 0, 0, 25, ST_CASTLE, 0},
+    {"AIR BASE", "SOLDIER BASE", 3, 0, "0m 10M 8M 5m 3M 7M", 13, 14, BASS_FM, MOTIF_SYNCOPE, 5, 17, 120, SC_DORIAN,
+     0, ARP_R_16, 15, 0, 0, 0, 0, ST_BASE, 0},
+    {"COAST DRIVE", "BEACH RACE", 5, 1, "0M 2m 4m 5M 7D 9m", 15, 11, BASS_PLUCK, MOTIF_SYNCOPE, 3, 5, 140, SC_LYDIAN,
+     0, ARP_R_16, 20, 0, 0, 40, 20, ST_BEACH, 0},
+    {"CRYSTAL PRELUDE", "CRYSTAL CAVE", 0, 0, "0M 9m 5M 7M 8M 10M", 7, 15, BASS_TRI, MOTIF_TENUE, RH_FULL, 9, 100, SC_LYDIAN,
+     ARP_UPDOWN2, ARP_R_16, 50, 30, 0, 0, 0, ST_CRYSTAL, 0},
+    {"TIME CORRIDOR", "TIME HALL", 9, 1, "0m 5m 10D 3M 8M 2d 7D", 14, 11, BASS_ROND, MOTIF_SUIT, 11, 19, 115, SC_DORIAN,
+     0, ARP_R_16, 30, 25, 0, 0, 0, ST_TIME, 0},
+    {"DEEP REEF", "UNDERWATER", 4, 2, "0M 5M 9m 7M", 8, 11, BASS_SUB, MOTIF_TENUE, 7, 11, 90, SC_LYDIAN,
+     0, ARP_R_16, 60, 20, 0, 50, 40, ST_WATER, 0},
+    {"DREAM GREENS", "CANDY LAND", 7, 0, "0M 5M 7M 9m 2m 7D", 2, 10, BASS_TRI, MOTIF_OCTAVES, 3, 10, 140, SC_MAJPENTA,
+     0, ARP_R_16, 15, 0, 0, 0, 0, ST_CANDY, 0},
+    {"ALIEN CAVES", "ALIEN PLANET", 4, 0, "0m 8M 5m 1M 3M 10M", 10, 4, BASS_SUB, MOTIF_TENUE, 7, 12, 100, SC_PHRYG,
+     0, ARP_R_16, 40, 40, 10, 0, 30, ST_SPACE, 0},
+    {"CITY BRAWL", "NEON STREET", 9, 0, "0m 8M 3M 10M", 15, 3, BASS_FM, MOTIF_CONTRE, 4, 13, 128, SC_MINOR,
+     0, ARP_R_16, 15, 25, 0, 0, 0, ST_CITY, 0},
+    {"STAR ROAD", "RAINBOW RACE", 2, 0, "0M 4m 9m 5M 2m 7M", 8, 10, BASS_PULSE, MOTIF_SYNCOPE, RH_FULL, 14, 150, SC_MAJOR,
+     ARP_UP2, ARP_R_16, 30, 20, 0, 20, 0, ST_RAINBOW, 0},
 };

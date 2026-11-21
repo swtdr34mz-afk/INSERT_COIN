@@ -40,18 +40,17 @@ typedef struct {
     float gate, swing, atk;
 } rhythm_t;
 
-typedef struct {                       /* a drum kit's sound */
-    float k_base, k_sweep, k_pdec, k_dec, k_drive;   /* kick: Hz, Hz added at the hit, its pitch drop (s), body (s), drive */
-    float k_hold, k_click;                           /* kick: full level for so long (s) before it decays, the beater's click 0..1 */
-    float h_tone, h_closed, h_open, h_metal;         /* hi-hat: 0 dark .. 1 bright, decays (s), metal (six square waves, as
-                                                        the classic drum machines) .. noise 0..1 */
-    float r_f1, r_f2, r_dec, r_noise;                /* perc: two tones (Hz), decay (s), click (rim, clave, cowbell) */
-    float s_tone, s_body, s_dec, s_snap, s_clap;     /* snare: body Hz, body amount 0..1, noise decay (s), brightness
-                                                        0..1, clap (0 a snare, 1 three quick bursts) */
-    float space;                                     /* how much of the hats, snare and perc go to the reverb */
-    float chip;                                      /* 1: an 8-bit console's drums: the noise from a shift register (held
-                                                        between its clocks; metal > 0.5: its short, tonal mode), a stepped
-                                                        triangle kick, square-wave perc */
+typedef struct {                       /* a drum kit: the Game Boy's sound channels, as its games and trackers played drums */
+    float k_f0, k_f1, k_drop, k_len;   /* kick, the wave channel (a 4-bit sine, 32 steps): from Hz, to Hz, how fast it drops (s),
+                                          its length (s: the length counter cuts it) */
+    float k_vol, k_env, k_click;       /* its 4-bit volume 0..15, its envelope (a step down every n/64 s; 0: none), a noise click */
+    float s_clk, s_w7, s_vol, s_env, s_len, s_tone;   /* snare, the noise channel: its clock (Hz), 1: the 7-bit register (metallic,
+                                                         tonal) else 15-bit, volume, envelope, length (s), a square body (Hz, 0 none) */
+    float h_clk, h_w7, h_vol, h_env, h_len, o_len;    /* hats, the same noise channel (a hat cuts the snare, and back):
+                                                         clock, 7-bit, volume, envelope, closed length, open length (s) */
+    float p_f, p_duty, p_vol, p_env, p_len;           /* perc, the second pulse channel: Hz, duty (0.125 .. 0.5), volume,
+                                                         envelope, length (s) */
+    float space;                                      /* the reverb they get (the Game Boy had none: 0) */
 } kit_t;
 
 typedef struct {                       /* a drum pattern: velocities per step (0 = rest), and its kit */
@@ -79,6 +78,7 @@ void eng_lead_params(float cut_hz, float level, float reverb, float delay);   /*
 void eng_lead_mod(float glide_s, float vibrato);   /* the melody's glide (s, from note to note while it sounds) and
                                                        vibrato depth 0..1 (half a semitone at most, it fades in) */
 void eng_lead(float m);               /* the melody voice: a MIDI pitch = note on, negative = release */
+void eng_lead_bend(float m);          /* the note that sounds moves to this pitch (its glide), not struck again */
 /* an outside MIDI clock's beat: the even step STEP (0..15) began at AT_MS (plat_ms); STEP -1: the clock is gone */
 void eng_sync(int step, uint32_t at_ms);
 /* side: sidechain amount 0..1; drums_on: the drum kit plays while chords play (its kicks pump the sidechain) */

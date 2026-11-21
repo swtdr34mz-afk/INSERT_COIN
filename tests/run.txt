@@ -2,8 +2,8 @@
 wait 4200
 expect mission 0
 expect metres <20
-# rhythm HELD (ALGORITHM one back from FULL): a chord sounds while its key is down
-turn ALGO -1
+# rhythm HELD (ALGORITHM back to the start of its list): a chord sounds while its key is down
+turn ALGO -4
 wait 50
 expect rhythm 0
 key b0 down

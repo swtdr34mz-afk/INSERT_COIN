@@ -8,7 +8,10 @@ screens. From CHORD RUN (swtdr34mz): the melody voice, the runner, missions and 
 The sets' chord progressions are in the style of famous video game tunes. A chord progression is no one's own; no melody,
 recording, name, character or picture of any game is used.
 
-All sounds are synthesized in the firmware: no samples.
+BLOCK DROP's GUIDE melody is Korobeiniki, a Russian folk song (Nikolay Nekrasov's poem, 1861), in the public domain.
+
+All sounds are synthesized in the firmware: no samples. The drums emulate how the Game Boy's sound channels work (the noise
+channel's shift register, the 4-bit volume envelopes, the length counter); no code or data of any console is used.
 
 ## Built on
 
