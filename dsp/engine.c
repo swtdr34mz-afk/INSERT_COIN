@@ -182,7 +182,7 @@ static struct {
     int gn_vol, gn_cnt, gn_per, gn_tvol, gn_tcnt;
     float gp_ph, gp_inc, gp_duty, gp_len, gp_g;
     int gp_vol, gp_cnt, gp_per;
-    float g_dc;
+    float g_dc, gk_a, gn_a, gp_a;                /* each channel's level, smoothed over half a millisecond: no clicks */
     int g_roll;
     float g_roll_left, g_roll_len, g_roll_g;
 } E;
@@ -1191,17 +1191,24 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                  * blip; summed, with only the console's own DC blocker after them */
                 {
                     float gv = 0.0f, nv = 0.0f;
-                    if (E.gk_vol > 0 && E.gk_len > 0.0f) {          /* kick */
-                        float f = E.gk_f;
-                        E.gk_ph += f / SR; if (E.gk_ph >= 1.0f) E.gk_ph -= 1.0f;
-                        E.gk_f = E.gk_f1 + (E.gk_f - E.gk_f1) * E.gk_fk;
-                        gv = ((float)KWAVE[(int)(E.gk_ph * 32.0f) & 31] * (2.0f / 15.0f) - 1.0f) * (float)E.gk_vol * (1.0f / 15.0f);
-                        if (E.gk_click > 0.0f) { gv += (rnd() > 0.0f ? 0.5f : -0.5f) * E.gk_click; E.gk_click *= 0.996f; if (E.gk_click < 0.01f) E.gk_click = 0.0f; }
-                        gv *= E.gk_g * 0.6f;
-                        E.gk_len -= 1.0f;
-                        if (E.gk_per > 0 && --E.gk_cnt <= 0) { E.gk_cnt = E.gk_per; E.gk_vol--; }
+                    {   /* kick (its level eased: a cut or a new hit never clicks) */
+                        float ka = E.gk_vol > 0 && E.gk_len > 0.0f ? (float)E.gk_vol * (1.0f / 15.0f) : 0.0f;
+                        E.gk_a += (ka - E.gk_a) * 0.05f;
+                        if (E.gk_a > 1e-4f || ka > 0.0f) {
+                            float f = E.gk_f;
+                            E.gk_ph += f / SR; if (E.gk_ph >= 1.0f) E.gk_ph -= 1.0f;
+                            E.gk_f = E.gk_f1 + (E.gk_f - E.gk_f1) * E.gk_fk;
+                            gv = ((float)KWAVE[(int)(E.gk_ph * 32.0f) & 31] * (2.0f / 15.0f) - 1.0f) * E.gk_a;
+                            if (E.gk_click > 0.0f) { gv += (E.gn_out > 0.0f ? 0.4f : -0.4f) * E.gk_click * E.gk_a; E.gk_click *= 0.995f; if (E.gk_click < 0.01f) E.gk_click = 0.0f; }
+                            gv *= E.gk_g * 0.6f;
+                            if (E.gk_len > 0.0f) E.gk_len -= 1.0f;
+                            if (E.gk_per > 0 && E.gk_vol > 0 && --E.gk_cnt <= 0) { E.gk_cnt = E.gk_per; E.gk_vol--; }
+                        }
                     }
-                    if (E.gn_vol > 0 && E.gn_len > 0.0f) {          /* the noise channel */
+                    {
+                    float na = E.gn_vol > 0 && E.gn_len > 0.0f ? (float)E.gn_vol * (1.0f / 15.0f) : 0.0f;
+                    E.gn_a += (na - E.gn_a) * 0.05f;
+                    if (E.gn_a > 1e-4f || na > 0.0f) {              /* the noise channel */
                         int st = 0, ones = 0;
                         E.gn_ph += E.gn_inc;
                         while (E.gn_ph >= 1.0f) {                   /* the register's clocks in this sample */
@@ -1213,15 +1220,16 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                         }
                         if (st) E.gn_out = (float)(ones * 2 - st) / (float)st;   /* (several clocks: their average, as the
                                                                                     console's output stage smooths them) */
-                        nv = E.gn_out * (float)E.gn_vol * (1.0f / 15.0f);
+                        nv = E.gn_out * E.gn_a;
                         if (E.gn_tvol > 0) {                        /* a snare's square body */
                             E.gn_tph += E.gn_tinc; if (E.gn_tph >= 1.0f) E.gn_tph -= 1.0f;
                             nv += (E.gn_tph < 0.5f ? 1.0f : -1.0f) * (float)E.gn_tvol * (1.0f / 15.0f) * 0.6f;
                             if (--E.gn_tcnt <= 0) { E.gn_tcnt = (int)(SR / 64.0f); E.gn_tvol -= 3; }
                         }
                         nv *= E.gn_g * 0.5f;
-                        E.gn_len -= 1.0f;
-                        if (E.gn_per > 0 && --E.gn_cnt <= 0) { E.gn_cnt = E.gn_per; E.gn_vol--; }
+                        if (E.gn_len > 0.0f) E.gn_len -= 1.0f;
+                        if (E.gn_per > 0 && E.gn_vol > 0 && --E.gn_cnt <= 0) { E.gn_cnt = E.gn_per; E.gn_vol--; }
+                    }
                     }
                     if (E.g_roll) {                                 /* the roll's next hit (the hat again) */
                         E.g_roll_left -= 1.0f;
@@ -1231,11 +1239,15 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                             gb_noise(kk->h_clk, kk->h_w7 > 0.5f, (int)kk->h_vol - 2, kk->h_env, kk->h_len, E.g_roll_g, 0.0f);
                         }
                     }
-                    if (E.gp_vol > 0 && E.gp_len > 0.0f) {          /* perc: the pulse channel */
-                        E.gp_ph += E.gp_inc; if (E.gp_ph >= 1.0f) E.gp_ph -= 1.0f;
-                        nv += (E.gp_ph < E.gp_duty ? 1.0f : -1.0f) * (float)E.gp_vol * (1.0f / 15.0f) * E.gp_g * 0.35f;
-                        E.gp_len -= 1.0f;
-                        if (E.gp_per > 0 && --E.gp_cnt <= 0) { E.gp_cnt = E.gp_per; E.gp_vol--; }
+                    {   /* perc: the pulse channel */
+                        float pa = E.gp_vol > 0 && E.gp_len > 0.0f ? (float)E.gp_vol * (1.0f / 15.0f) : 0.0f;
+                        E.gp_a += (pa - E.gp_a) * 0.05f;
+                        if (E.gp_a > 1e-4f || pa > 0.0f) {
+                            E.gp_ph += E.gp_inc; if (E.gp_ph >= 1.0f) E.gp_ph -= 1.0f;
+                            nv += (E.gp_ph < E.gp_duty ? 1.0f : -1.0f) * E.gp_a * E.gp_g * 0.35f;
+                            if (E.gp_len > 0.0f) E.gp_len -= 1.0f;
+                            if (E.gp_per > 0 && E.gp_vol > 0 && --E.gp_cnt <= 0) { E.gp_cnt = E.gp_per; E.gp_vol--; }
+                        }
                     }
                     {   /* the console's DC blocker (a capacitor), and nothing else */
                         float x = gv + nv;

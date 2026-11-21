@@ -107,7 +107,7 @@ static const struct {
     const char *white;
     uint8_t snd, msnd, bsnd, bmot, rhy, dpat, bpm, scale, arp, arate, rev, del, crush, chorus, mvib, stage, guide;
 } GRID_DEF[NGRID] = {
-    {"PLUMBER OVERWORLD", "GRASSLAND 1-1", 0, 0, "0M 5M 7D 9m 8M 10M", 0, 3, BASS_TRI, MOTIF_OCTAVES, 9, 0, 150, SC_MAJOR,
+    {"PLUMBER OVERWORLD", "SUNNY PLATFORMER", 0, 0, "0M 5M 7D 9m 8M 10M", 0, 3, BASS_TRI, MOTIF_OCTAVES, 9, 0, 150, SC_MAJOR,
      0, ARP_R_16, 10, 0, 0, 0, 0, ST_GRASS, 0},
     {"PIPE UNDERGROUND", "UNDERGROUND", 0, 0, "0m 9m 10M 3M 5m 8M", 1, 12, BASS_TRI, MOTIF_CONTRE, 11, 6, 100, SC_BLUES,
      0, ARP_R_16, 5, 35, 0, 0, 0, ST_UNDER, 0},

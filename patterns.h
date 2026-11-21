@@ -10,23 +10,25 @@
  * envelope n, length s, square body Hz), hats (noise: clock, 7-bit, volume, envelope n, closed s, open s), perc (pulse: Hz,
  * duty, volume, envelope n, length s), space. An envelope n: the 4-bit volume one step down every n/64 s */
 #define NKIT 5
-static const char *const KIT_NAME[NKIT] = {"POCKET", "BRICK", "TRACKER", "GRITTY", "TINY"};
+static const char *const KIT_NAME[NKIT] = {"GRITTY", "RUMBLE", "CRUNCH", "DUSTY", "BLAST"};
+/* all five after GRITTY: low noise clocks (the rumbly hiss of the old games' explosions), slow 4-bit envelopes, a sine kick
+ * that drops with a noise click, nothing bright */
 static const kit_t KIT[NKIT] = {
-    /* POCKET: the handheld's own games: a short sine kick, a bright hiss snare, thin hats */
-    {220.0f, 45.0f, 0.035f, 0.16f, 15.0f, 2.0f, 0.25f,  16384.0f, 0.0f, 13.0f, 1.0f, 0.22f, 0.0f,
-     131072.0f, 0.0f, 8.0f, 1.0f, 0.045f, 0.22f,  1047.0f, 0.25f, 10.0f, 1.0f, 0.07f,  0.0f},
-    /* BRICK: heavier, the snare with a square body, a longer kick */
-    {180.0f, 40.0f, 0.050f, 0.22f, 15.0f, 3.0f, 0.35f,  8192.0f, 0.0f, 15.0f, 2.0f, 0.28f, 185.0f,
-     65536.0f, 0.0f, 10.0f, 1.0f, 0.040f, 0.28f,  523.0f, 0.5f, 11.0f, 1.0f, 0.08f,  0.02f},
-    /* TRACKER: as the music trackers on the handheld: a punchy clicky kick, a crisp snare, metallic 7-bit hats */
-    {300.0f, 48.0f, 0.025f, 0.14f, 15.0f, 1.0f, 0.50f,  32768.0f, 0.0f, 15.0f, 1.0f, 0.14f, 220.0f,
-     262144.0f, 1.0f, 7.0f, 1.0f, 0.030f, 0.18f,  1568.0f, 0.125f, 9.0f, 1.0f, 0.05f,  0.0f},
-    /* GRITTY: low clocks, the rumbly noise of the old games' explosions */
+    /* GRITTY */
     {150.0f, 35.0f, 0.060f, 0.25f, 15.0f, 4.0f, 0.60f,  4096.0f, 0.0f, 15.0f, 2.0f, 0.30f, 0.0f,
      32768.0f, 0.0f, 9.0f, 1.0f, 0.060f, 0.30f,  880.0f, 0.5f, 10.0f, 2.0f, 0.09f,  0.0f},
-    /* TINY: soft and short, quiet hats */
-    {330.0f, 60.0f, 0.020f, 0.10f, 12.0f, 1.0f, 0.10f,  24576.0f, 0.0f, 10.0f, 1.0f, 0.12f, 0.0f,
-     196608.0f, 0.0f, 5.0f, 1.0f, 0.025f, 0.15f,  2093.0f, 0.25f, 8.0f, 1.0f, 0.04f,  0.0f},
+    /* RUMBLE: deeper and longer, a darker snare */
+    {130.0f, 30.0f, 0.080f, 0.30f, 15.0f, 5.0f, 0.50f,  2048.0f, 0.0f, 15.0f, 3.0f, 0.35f, 0.0f,
+     16384.0f, 0.0f, 8.0f, 1.0f, 0.070f, 0.35f,  660.0f, 0.5f, 10.0f, 2.0f, 0.10f,  0.0f},
+    /* CRUNCH: a punchier kick, a tighter snare */
+    {170.0f, 40.0f, 0.050f, 0.22f, 15.0f, 3.0f, 0.70f,  6144.0f, 0.0f, 15.0f, 2.0f, 0.25f, 0.0f,
+     49152.0f, 0.0f, 9.0f, 1.0f, 0.050f, 0.25f,  1047.0f, 0.5f, 10.0f, 2.0f, 0.08f,  0.0f},
+    /* DUSTY: softer, quieter hats */
+    {150.0f, 35.0f, 0.060f, 0.25f, 14.0f, 4.0f, 0.40f,  3072.0f, 0.0f, 13.0f, 2.0f, 0.30f, 0.0f,
+     24576.0f, 0.0f, 7.0f, 1.0f, 0.070f, 0.30f,  784.0f, 0.25f, 9.0f, 2.0f, 0.09f,  0.0f},
+    /* BLAST: the loudest, a long snare like an explosion */
+    {160.0f, 32.0f, 0.070f, 0.28f, 15.0f, 4.0f, 0.80f,  5120.0f, 0.0f, 15.0f, 3.0f, 0.40f, 0.0f,
+     40960.0f, 0.0f, 10.0f, 1.0f, 0.060f, 0.32f,  523.0f, 0.5f, 11.0f, 2.0f, 0.12f,  0.0f},
 };
 
 /* the built-in grooves: 16 steps, X accent, x soft, . rest; hi-hat row: o open, 2 / 3 / 4 a roll of that many hits; their kit

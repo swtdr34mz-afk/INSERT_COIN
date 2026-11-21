@@ -6,12 +6,12 @@ by Obsimo (OSR Records). Built on [fm1-base](https://github.com/charlesvestal/fm
 [felucca-bsp](https://github.com/hugelton/felucca-bsp).
 
 Play the chords of a video game tune with one finger and a melody over them, with chip sounds and Game Boy drums, build
-your own drum grooves, loop 8 bars of chords to jam over, while a pixel hero runs through a jump'n'run level as long as you
-play: it jumps on every chord, collects coins, stomps enemies and fights a boss at the end of each level.
+your own drum grooves, loop 8 bars of chords to jam over, while an early-80s arcade shooter plays along: your ship
+fires on every key you play.
 
 **Play it in the browser:** https://swtdr34mz-afk.github.io/PIXEL_RUN/emu/ (the same firmware, built for the browser).
 
-![PIXEL RUN](site/img/screen-main.png) ![A boss](site/img/screen-boss.png) ![DRUM STUDIO](site/img/screen-studio.png)
+![PIXEL RUN](site/img/screen-main.png) ![DRUM STUDIO](site/img/screen-studio.png)
 
 ## What it does
 
@@ -30,24 +30,23 @@ play: it jumps on every chord, collects coins, stomps enemies and fights a boss 
   and the 16-bit consoles' FM (brass, bell, e-piano, strings). The bass has the chip TRIANGLE and PULSE too.
 - **Chip arpeggio:** ARP's rates FAST and CHIP play a chord as one fast arpeggio (30 or 60 notes a second), the classic
   way 8-bit music plays chords.
-- **Drums:** the Game Boy's sound channels as its games and trackers made drums of them: a kick on the wave channel
-  (a 4-bit sine that drops), snare and hats on the noise channel (its shift register, 15- or 7-bit, a 4-bit volume that
-  steps down every n/64 s, the length counter; one channel, so a hat cuts the snare), perc on a pulse channel; no
-  polish, only the console's DC blocker. Five kits (POCKET, BRICK, TRACKER, GRITTY, TINY) and 20 grooves: platformer,
-  overworld, shuffle, castle, boss fight, racing, dungeon, shooter, puzzle, title, bounce, underwater, space, chip house,
-  turbo, chip breaks, chip funk, chip hip hop, gallop, credits.
+- **Drums:** the Game Boy's sound channels as its games made drums of them: a kick on the wave channel (a 4-bit sine
+  that drops, with a noise click), snare and hats on the noise channel (its shift register, low clocks, a 4-bit volume
+  that steps down every n/64 s, the length counter; one channel, so a hat cuts the snare), perc on a pulse channel; each
+  channel's level eased over half a millisecond, so nothing clicks. Five gritty kits (GRITTY, RUMBLE, CRUNCH, DUSTY,
+  BLAST) and 20 grooves: platformer, overworld, shuffle, castle, boss fight, racing, dungeon, shooter, puzzle, title,
+  bounce, underwater, space, chip house, turbo, chip breaks, chip funk, chip hip hop, gallop, credits.
 - **DRUM STUDIO:** build a groove of your own: 16 steps on 4 tracks (kick, snare, hats, perc), a kit, a swing, and keep it
   in one of 20 user slots (kept in the flash, in the backup too).
 - **FX:** a bitcrusher (fewer bits, a lower sample rate), delay, chorus, reverb, and the sidechain (GROOVE).
 - **Loop:** press REC, play up to 8 bars of chords (REC again closes it at its bar), and they play round while you play the
   melody on top, or build drums in the studio.
-- **The game:** a jump'n'run on the screen. The hero runs while you play and jumps on every chord (and by itself over
-  pits, walls and enemies, and up to coins); each melody note puts a coin ahead, as high as the note; blobs get stomped.
-  At each level's end a boss: every chord throws a star at it, every melody note a small one. Defeated, it gives 10 coins
-  and the next level (WORLD 1-1, 1-2 ...). The main page shows the set's world; every other page its own stage (FX the
-  lava level, CHORDS the sky, ARP the rainbow road, GROOVE the speed zone, BASS the underground, MELODY underwater,
-  MELODY 2 the crystal cave, CHORDS 2 the ice peaks, DRUMS the boss castle, the studio the block world). Coins, the world,
-  metres, missions and ten heroes to unlock are kept.
+- **The game:** an early-80s vertical shooter of its own on the screen: a dotted grid rushing towards you, a formation of
+  pixel invaders swaying at the top, some diving at the ship in arcs and firing, a saucer now and then. The ship flies by
+  itself (it dodges, and lines up under the invaders) and fires on every key you play: a chord a double shot, a melody
+  note one. A wave shot down brings the next in new colours: six palettes of the era (radar, vector, neon, amber, ice,
+  ultra), turning with the waves and the time played. One screen for every page. The high score, metres, missions and
+  ten ships to unlock (SEQ) are kept.
 
 ## Controls
 
@@ -69,7 +68,7 @@ play: it jumps on every chord, collects coins, stomps enemies and fights a boss 
 | HOME | Back to the main page. Held: the title and your progress |
 | REC | The loop: ready → the first chord records up to 8 bars (REC closes it) → it plays round. Held 1 s: cleared |
 | PLAY | Stops the loop and starts it again from its start |
-| SEQ | The next hero (the unlocked ones) |
+| SEQ | The next ship (the unlocked ones) |
 | SAVE | The music heard from outside the room |
 | OCT- / OCT+ | Octave |
 | HOME + REC held 3 s | Back to the first-start settings (your progress and your grooves stay) |
