@@ -2,7 +2,7 @@
 # Also runs the host simulator's tests (a failing test does not stop the build).
 # Result: Actions tab > the run > "Artifacts" > insertcoin-firmware.
 # On a tag (v0.1, v1.0 ...) the release gets the .fwsc. Every push to main also puts INSERT COIN in the browser
-# (fm1-base's emulator: the same app compiled to WebAssembly) on GitHub Pages: https://swtdr34mz-afk.github.io/PIXEL_RUN/emu/
+# (fm1-base's emulator: the same app compiled to WebAssembly) on GitHub Pages: https://swtdr34mz-afk.github.io/INSERT_COIN/emu/
 # (the Firmware Hub card's play key, fmhub.json "play"; Settings > Pages > Source: GitHub Actions).
 name: Build firmware
 on:

@@ -9,7 +9,7 @@ Play the chords of a video game tune with one finger and a melody over them, wit
 your own drum grooves, loop 8 bars of chords to jam over, while an early-80s arcade shooter plays along: your ship
 fires on every key you play.
 
-**Play it in the browser:** https://swtdr34mz-afk.github.io/PIXEL_RUN/emu/ (the same firmware, built for the browser).
+**Play it in the browser:** https://swtdr34mz-afk.github.io/INSERT_COIN/emu/ (the same firmware, built for the browser).
 
 ![INSERT COIN](site/img/screen-main.png) ![DRUM STUDIO](site/img/screen-studio.png)
 
@@ -99,7 +99,7 @@ Push to GitHub: the workflow builds the firmware (`.fwsc`) on every push (Action
 
 Locally (Linux x86-64), the simulator and its tests (the screens' pixel type is fm1-base's Terminus set):
 
-    git clone --recursive https://github.com/swtdr34mz-afk/PIXEL_RUN && cd PIXEL_RUN
+    git clone --recursive https://github.com/swtdr34mz-afk/INSERT_COIN && cd INSERT_COIN
     X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host
     build/host/insertcoin_host tests/basic.txt build/host     # sets, sounds, crush, the drum studio, the loop
     build/host/insertcoin_host tests/run.txt build/host       # the run, a mission, the progress kept
