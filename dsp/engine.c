@@ -45,7 +45,7 @@ static float *const ap_buf[4] = {ap_buf0, ap_buf1, ap_buf2, ap_buf3};
 
 /* ------------------------------------------------------------------ command queue (main loop -> render) --- */
 enum { CMD_SOUND, CMD_RHYTHM, CMD_CHORD, CMD_STOP, CMD_PARAMS, CMD_FX, CMD_GROOVE, CMD_DRUMS, CMD_BASS, CMD_MUFFLE,
-       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW, CMD_LBEND, CMD_SFX, CMD_SFXLVL };
+       CMD_BLIP, CMD_PANIC, CMD_SYNC, CMD_LEAD, CMD_LSOUND, CMD_LPARAM, CMD_LMOD, CMD_CFX, CMD_PREVIEW, CMD_LBEND, CMD_SFX, CMD_SFXLVL, CMD_LEADQ };
 typedef struct {
     uint8_t t;
     union {
@@ -186,6 +186,8 @@ static struct {
     float g_dc, gk_a, gn_a, gp_a;
     /* the sound effects: a pulse that steps through its notes (4-bit volume falling), some noise under it */
     int fx_type, fx_n, fx_i, fx_wait, fx_vol, fx_cnt;
+    uint8_t ldq_on;                              /* a melody note (or its end) waits for the next sixteenth */
+    float ldq_m;
     float fx_notes[4], fx_ph, fx_inc, fx_left, fx_len, fx_duty, fx_nz, fx_lvl, fx_a;
     uint16_t fx_lfsr;                /* each channel's level, smoothed over half a millisecond: no clicks */
     int g_roll;
@@ -269,6 +271,7 @@ void eng_lead_params(float cut_hz, float level, float reverb, float delay)
     push(&c);
 }
 void eng_lead(float m) { cmd_t c; c.t = CMD_LEAD; c.u.ld.m = m; push(&c); }
+void eng_lead_q(float m) { cmd_t c; c.t = CMD_LEADQ; c.u.ld.m = m; push(&c); }
 void eng_lead_bend(float m) { cmd_t c; c.t = CMD_LBEND; c.u.ld.m = m; push(&c); }
 void eng_chordfx(int arp, int rate, float flow, float swing, float width, int spread, float level)
 {
@@ -613,10 +616,12 @@ static void gb_noise(float clk, int w7, int vol, float env, float len, float g, 
     E.gn_tinc = tone / SR; E.gn_tph = 0.0f; E.gn_tvol = tone > 0.0f ? 12 : 0; E.gn_tcnt = (int)(SR / 64.0f);
 }
 
+static void lead_cmd(float m);
 static void on_step(void)
 {
     int i = E.step, kick = 0;
     if (E.fx_wait) fx_start();                       /* a sound effect waited for this sixteenth */
+    if (E.ldq_on) { E.ldq_on = 0; lead_cmd(E.ldq_m); }   /* and a melody note */
     if (i == 0) E.bar++;
     float sl = step_len(i);
     if (E.drums_on && ((E.active && !E.rh.hold) || E.preview)) {   /* the drums play with a rhythm only (or the studio's preview) */
@@ -728,6 +733,15 @@ static void chord_cmd(const float *notes, float bass, float glide)
     }
 }
 
+/* the melody voice: a note on (a MIDI pitch) or its release (negative) */
+static void lead_cmd(float m)
+{
+    if (m < 0.0f) { if (E.ld_st) E.ld_st = 3; return; }
+    E.ld_tgt = m;
+    if (!(E.ld_st && E.lglide > 0.005f)) E.ld_m = E.ld_tgt;   /* glide only from a note that still sounds */
+    E.ld_st = 1; E.ld_fe = 1.0f; E.ld_ie = 1.0f; E.ld_exc = 1; E.ld_vamt = 0.0f; E.ld_swp = E.lp.sweep;
+}
+
 static void run_commands(void)
 {
     while (cq_tail != cq_head) {
@@ -803,13 +817,9 @@ static void run_commands(void)
             E.lr_in = fm_sqrtf(1.0f - E.lr_g * E.lr_g);
             E.lr_wet = E.lrev > 0.001f ? LR_WET0 + LR_WET1 * E.lrev : 0.0f;
             break;
-        case CMD_LEAD:
-            if (c->u.ld.m < 0.0f) { if (E.ld_st) E.ld_st = 3; }
-            else {
-                E.ld_tgt = c->u.ld.m;
-                if (!(E.ld_st && E.lglide > 0.005f)) E.ld_m = E.ld_tgt;   /* glide only from a note that still sounds */
-                E.ld_st = 1; E.ld_fe = 1.0f; E.ld_ie = 1.0f; E.ld_exc = 1; E.ld_vamt = 0.0f; E.ld_swp = E.lp.sweep;
-            }
+        case CMD_LEAD: lead_cmd(c->u.ld.m); break;
+        case CMD_LEADQ:
+            if (E.running) { E.ldq_on = 1; E.ldq_m = c->u.ld.m; } else lead_cmd(c->u.ld.m);
             break;
         case CMD_LMOD: E.lglide = c->u.lm.glide; E.lvib = c->u.lm.vib; break;
         case CMD_LBEND:                         /* the chord changed under a held melody note: it moves with it */

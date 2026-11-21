@@ -78,6 +78,7 @@ void eng_lead_params(float cut_hz, float level, float reverb, float delay);   /*
 void eng_lead_mod(float glide_s, float vibrato);   /* the melody's glide (s, from note to note while it sounds) and
                                                        vibrato depth 0..1 (half a semitone at most, it fades in) */
 void eng_lead(float m);               /* the melody voice: a MIDI pitch = note on, negative = release */
+void eng_lead_q(float m);             /* the same, on the next sixteenth of the rhythm (now when none runs) */
 void eng_lead_bend(float m);          /* the note that sounds moves to this pitch (its glide), not struck again */
 /* an outside MIDI clock's beat: the even step STEP (0..15) began at AT_MS (plat_ms); STEP -1: the clock is gone */
 void eng_sync(int step, uint32_t at_ms);

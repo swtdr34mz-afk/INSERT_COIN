@@ -2143,8 +2143,10 @@ static void demo_poke(uint32_t now)
 }
 static void demo_tick(uint32_t now)
 {
-    float bar_ms = 240000.0f / (float)set.bpm;
-    int32_t b, e8;
+    int st = 0;
+    float fr = 0.0f;
+    uint32_t bar = 0;
+    int32_t pos;
     if (!demo.on) {
         if (!set.attract || !demo.last || now - demo.last < 40000u || active || lp.st == LP_PLAY || lp.st == LP_REC
             || set.page == PG_STUDIO || ui.help || preview)
@@ -2152,24 +2154,38 @@ static void demo_tick(uint32_t now)
         demo.on = 1; gm.demo = 1; demo.t0 = now; demo.bar = -1; demo.eighth = -1; demo.w = 7;
         gm.demo_score = gm.score; gm.demo_wave = gm.wave;
     }
-    b = (int32_t)((float)(now - demo.t0) / bar_ms);
-    e8 = (int32_t)((float)(now - demo.t0) / (bar_ms * 0.125f));
-    if (b != demo.bar) {                                       /* a chord each bar */
-        int slot = (int)(b % (int32_t)grid_n[set.grid]), k;
-        demo.bar = b;
-        for (k = 0; k < NKEYS; k++)
-            if (kb_black[k] == slot) { held_idx = -1; play(k); break; }
+    /* in time with the drums: the rhythm's own steps and bars (its tempo, its swing), as the engine plays them */
+    if (!eng_pos(&st, &fr, &bar)) {
+        if (demo.bar < 0) {                                     /* the first chord starts the rhythm */
+            int k;
+            demo.bar = 0;
+            for (k = 0; k < NKEYS; k++) if (kb_black[k] == 0) { held_idx = -1; play(k); break; }
+        }
+        return;
     }
-    if (e8 != demo.eighth) {                                   /* the melody: a walk on the white keys */
-        uint32_t h = hash32((uint32_t)e8 * 2246822519u + (uint32_t)set.grid);
-        demo.eighth = e8;
-        if (h % 3u) {
-            demo.w += (int)(h >> 8) % 5 - 2;
-            if (demo.w < 4) demo.w = 5;
-            if (demo.w > 12) demo.w = 11;
-            eng_lead(key_pitch(kb_wkey[demo.w]));
-            gm_note(0);
-        } else eng_lead(-1.0f);
+    if ((int32_t)bar != demo.bar && demo.bar >= 0 && st == 0) {    /* a new bar: the next chord, on its first step */
+        int slot, k;
+        demo.bar = (int32_t)bar;
+        slot = (int)(bar % (uint32_t)grid_n[set.grid]);
+        for (k = 0; k < NKEYS; k++)
+            if (kb_black[k] == slot) { held_idx = -1; if (cur_idx != k) play(k); break; }
+    }
+    pos = (int32_t)(bar * 16u) + st;
+    if (pos != demo.eighth) {                                   /* each sixteenth: the next one's note, quantized to it */
+        int32_t nx = pos + 1;
+        demo.eighth = pos;
+        if (nx & 1) {                                           /* off the eighth: the note lets go, now and then */
+            if (hash32((uint32_t)nx * 2654435761u) % 3u == 0u) eng_lead_q(-1.0f);
+        } else {
+            uint32_t h = hash32((uint32_t)nx * 2246822519u + (uint32_t)set.grid);
+            if (h % 4u) {
+                demo.w += (int)((h >> 8) % 5u) - 2;
+                if (demo.w < 4) demo.w = 5;
+                if (demo.w > 12) demo.w = 11;
+                eng_lead_q(key_pitch(kb_wkey[demo.w]));
+                gm_note(0);
+            } else eng_lead_q(-1.0f);
+        }
     }
 }
 
@@ -2663,12 +2679,12 @@ void app_frame(void)
 {
     uint32_t now = plat_ms();
     input();
+    if (sc.title < 0.5f && sc.started) demo_tick(now);   /* the attract mode: every pass, so its notes land on the steps */
     if (now - ui.frame_at >= 40u) {
         float dt = ui.frame_at ? (float)(now - ui.frame_at) * 0.001f : 0.04f;
         if (dt > 0.1f) dt = 0.1f;
         ui.frame_at = now;
         scene_step(now, dt);
-        if (sc.title < 0.5f) demo_tick(now);
         game_step(now, dt);
         gm_step(now, dt);
         {
