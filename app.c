@@ -2131,6 +2131,27 @@ static void gm_step(uint32_t now, float dt)
 /* No one playing for 40 s (ATTRACT on): the game plays itself as an arcade does, INSERT COIN blinking: the set's chords
  * one a bar, a made-up melody, the ship firing. Any key, button or knob: it stops (its score is not kept). */
 static struct { uint8_t on; uint32_t last, t0; int32_t bar, eighth; int w; } demo;
+/* the demo's beat: BLOCK DROP's (its drum groove, quarter-note chords), the set's own back when it stops */
+static groove_t demo_keep;
+static void demo_beat(int on)
+{
+    rhythm_t r;
+    int i;
+    if (on) {
+        demo_keep = wk;
+        groove_load(8);                                       /* PUZZLE, BLOCK DROP's groove */
+        send_drums();
+        memset(&r, 0, sizeof r);
+        for (i = 0; i < 16; i += 4) { r.v[i] = i == 0 || i == 8 ? 1.0f : 0.62f; r.len[i] = 4; }   /* QUARTERS */
+        r.gate = 0.85f;
+        eng_rhythm(&r);
+        eng_lead_mod(0.09f, 0.35f);                           /* the melody: gliding from note to note, a vibrato */
+    } else {
+        wk = demo_keep;
+        set.dkit = wk.kit; set.dswing = wk.swing;
+        send_drums(); send_rhythm(); send_lead();
+    }
+}
 static void demo_poke(uint32_t now)
 {
     demo.last = now;
@@ -2140,7 +2161,21 @@ static void demo_poke(uint32_t now)
     if (active) stop();
     held_idx = -1;
     eng_lead(-1.0f);
+    demo_beat(0);
 }
+/* the demo's melody: chiptune phrases, a bar each, long notes that glide, on the chord's notes: (step, length, white keys
+ * above the chord's root); a phrase ends where the next begins (legato) */
+#define NPHR 8
+static const int8_t PHR[NPHR][4][2] = {
+    {{0, 4}, {8, 2}, {12, 0}, {-1, 0}},          /* the fifth held, the third, the root */
+    {{0, 0}, {4, 2}, {8, 4}, {-1, 0}},           /* up the chord to the fifth */
+    {{0, 7}, {12, 6}, {14, 4}, {-1, 0}},         /* the octave held, then a fall */
+    {{0, 4}, {6, 5}, {8, 4}, {12, 2}},           /* a turn round the fifth */
+    {{0, 2}, {4, 4}, {8, 7}, {-1, 0}},           /* a run up to the octave */
+    {{0, 9}, {8, 7}, {-1, 0}, {-1, 0}},          /* high, then it settles */
+    {{0, 4}, {4, 3}, {8, 2}, {12, 1}},           /* down step by step */
+    {{0, 0}, {-1, 0}, {-1, 0}, {-1, 0}},         /* the root, the whole bar */
+};
 static void demo_tick(uint32_t now)
 {
     int st = 0;
@@ -2153,6 +2188,7 @@ static void demo_tick(uint32_t now)
             { if (!demo.last) demo.last = now; return; }
         demo.on = 1; gm.demo = 1; demo.t0 = now; demo.bar = -1; demo.eighth = -1; demo.w = 7;
         gm.demo_score = gm.score; gm.demo_wave = gm.wave;
+        demo_beat(1);
     }
     /* in time with the drums: the rhythm's own steps and bars (its tempo, its swing), as the engine plays them */
     if (!eng_pos(&st, &fr, &bar)) {
@@ -2171,21 +2207,19 @@ static void demo_tick(uint32_t now)
             if (kb_black[k] == slot) { held_idx = -1; if (cur_idx != k) play(k); break; }
     }
     pos = (int32_t)(bar * 16u) + st;
-    if (pos != demo.eighth) {                                   /* each sixteenth: the next one's note, quantized to it */
-        int32_t nx = pos + 1;
+    if (pos != demo.eighth) {                                   /* each sixteenth: the next one's note, if one starts there */
+        int32_t nx = pos + 1, nb = nx / 16, ns = nx % 16, ph, i;
         demo.eighth = pos;
-        if (nx & 1) {                                           /* off the eighth: the note lets go, now and then */
-            if (hash32((uint32_t)nx * 2654435761u) % 3u == 0u) eng_lead_q(-1.0f);
-        } else {
-            uint32_t h = hash32((uint32_t)nx * 2246822519u + (uint32_t)set.grid);
-            if (h % 4u) {
-                demo.w += (int)((h >> 8) % 5u) - 2;
-                if (demo.w < 4) demo.w = 5;
-                if (demo.w > 12) demo.w = 11;
-                eng_lead_q(key_pitch(kb_wkey[demo.w]));
+        ph = (nb % 4 == 3) ? 7 : (int)(hash32((uint32_t)nb * 2654435761u + (uint32_t)set.grid) % (NPHR - 1));   /* the 4th bar: home */
+        for (i = 0; i < 4; i++)
+            if (PHR[ph][i][0] == ns) {
+                int slot = (int)(nb % (int32_t)grid_n[set.grid]), root = (set.key + grid_w[set.grid][slot].semi) % 12, w, rw = 7;
+                for (w = 5; w < 12; w++) if ((((int)mel_pitch(w) - root) % 12 + 12) % 12 == 0) { rw = w; break; }
+                w = rw + PHR[ph][i][1];
+                if (w > 15) w -= 7;
+                eng_lead_q(key_pitch(kb_wkey[w]));
                 gm_note(0);
-            } else eng_lead_q(-1.0f);
-        }
+            }
     }
 }
 
