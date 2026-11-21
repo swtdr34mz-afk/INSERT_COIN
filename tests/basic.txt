@@ -96,8 +96,8 @@ turn K1 4
 wait 300
 expect dpat 18
 shot drums.png
-# GLO again: the DRUM STUDIO; the keys are steps now (no chord), PLAY the drums alone
-tap GLO
+# SEQ: the DRUM STUDIO; the white keys are steps now (no chord), PLAY the drums alone
+tap SEQ
 wait 50
 expect page 10
 shot studio.png
@@ -117,22 +117,22 @@ tap REC
 wait 50
 expect step0 0
 expect step4 0
-tapkey 0
+tapkey w0
 wait 30
-tapkey 4
+tapkey w4
 wait 30
-tapkey 8
+tapkey w8
 wait 30
-tapkey 12
+tapkey w12
 wait 30
 expect step0 2
 expect step4 2
 expect edited 1
 # a tap again: soft, again: off
-tapkey 12
+tapkey w12
 wait 30
 expect step12 1
-tapkey 12
+tapkey w12
 wait 30
 expect step12 0
 # the hats (K1: track): open and a roll
@@ -141,22 +141,22 @@ wait 200
 expect dtrack 2
 tap REC
 wait 30
-tapkey 2
+tapkey w2
 wait 30
-tapkey 6
+tapkey w6
 wait 30
-tapkey 6
+tapkey w6
 wait 30
-tapkey 6
+tapkey w6
 wait 30
 expect step6 3
-tapkey 14
+tapkey w14
 wait 30
-tapkey 14
+tapkey w14
 wait 30
-tapkey 14
+tapkey w14
 wait 30
-tapkey 14
+tapkey w14
 wait 30
 expect step14 4
 # the kit (K2) and the swing (K3)
@@ -180,7 +180,7 @@ tap PLAY
 wait 50
 expect preview 0
 # out of the studio: no preview
-tap GLO
+tap SEQ
 wait 50
 expect page 0
 wait 5000
@@ -188,16 +188,14 @@ reboot
 wait 4200
 expect used0 1
 expect dpat 20
-tap GLO
-wait 50
-tap GLO
+tap SEQ
 wait 50
 expect page 10
 expect dtrack 2
 expect step6 3
 expect step14 4
 shot studio_kept.png
-tap GLO
+tap SEQ
 wait 50
 # the loop: 8 bars at the most (REC, a chord starts it, REC closes it at its bar)
 turn SELECT -19

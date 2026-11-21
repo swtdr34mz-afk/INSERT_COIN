@@ -45,7 +45,7 @@ fires on every key you play.
   itself (it dodges, and lines up under the invaders) and fires on every key you play: a chord a double shot, a melody
   note one. A wave shot down brings the next in new colours: six palettes of the era (radar, vector, neon, amber, ice,
   ultra), turning with the waves and the time played. One screen for every page. The high score, metres, missions and
-  ten ships to unlock (SEQ) are kept.
+  ten ships to unlock (SEL twice: SHIP) are kept.
 
 ## Controls
 
@@ -54,29 +54,29 @@ fires on every key you play.
 | Black keys | The set's chords. With a rhythm the chord keeps playing (the same key again stops it); without one (HELD) it plays while you hold the key. The black keys right of the chords play the melody too |
 | White keys | The melody |
 | SELECT | Set (its own sounds, tempo, arpeggio and drums come with it) |
-| ALGORITHM | Chord rhythm: HELD, FULL (held, with the drums), quarters, eighths, staccato, offbeat, pump, syncopated, stabs, tresillo, gallop, half-time. A set brings its own |
+| ALGORITHM | Chord rhythm: HELD, FULL (held, with the drums), quarters, eighths, and the 8-bit games' own: upbeat (oom-pah), buzz (clipped sixteenths), march, shuffle, punch (3 + 3 + 2 stabs), dotted, rush. A set brings its own |
 | PRESET | The chords' sound |
 | K1..K4 | The page's four settings (shown at the bottom of the screen) |
 | FX | Delay, crush, chorus, reverb |
-| SEL | Chords: key, voicing, bass note, level. SEL again: CHORDS 2: width, spread |
+| SEL | Chords: key, voicing, bass note, level. SEL again: CHORDS 2: width, spread, SHIP (the unlocked ones) |
 | ARP | The arpeggiator: mode, rate (1/4 .. 1/32, triplets, FAST, CHIP), flow, swing |
 | ENV | Groove: BPM, swing, density, sidechain |
 | LFO | Bass: sound, level, riff, filter |
 | EDIT | Melody: FOLLOW (smart / root), level, space, preset. EDIT again: MELODY 2: glide, octave, vibrato, ASSIST |
-| GLO | Drums: style (the 20 grooves, then USER 1 .. USER 20), kick, hats, snare. **GLO again: the DRUM STUDIO** |
+| GLO | Drums: style (the 20 grooves, then USER 1 .. USER 20), kick, hats, snare |
 | HOME | Back to the main page. Held: the title and your progress |
 | REC | The loop: ready → the first chord records up to 8 bars (REC closes it) → it plays round. Held 1 s: cleared |
 | PLAY | Stops the loop and starts it again from its start |
-| SEQ | The next ship (the unlocked ones) |
+| SEQ | **The DRUM STUDIO** (SEQ again: back) |
 | SAVE | The music heard from outside the room |
 | OCT- / OCT+ | Octave |
 | HOME + REC held 3 s | Back to the first-start settings (your progress and your grooves stay) |
 
-### DRUM STUDIO (GLO twice)
+### DRUM STUDIO (SEQ)
 
 | Control | What it does |
 | --- | --- |
-| The first 16 keys | The 16 steps of the track: a tap sets an accent, again a soft hit, again off. On the hats also an open hat and a roll |
+| The 16 white keys | The 16 steps of the track (they light up; the black keys stay dark): a tap sets an accent, again a soft hit, again off. On the hats also an open hat and a roll |
 | K1 | The track: KICK, SNARE, HATS, PERC |
 | K2 | The kit |
 | K3 | The groove's own swing |

@@ -700,7 +700,7 @@ static void rechord(void)
 enum { PG_MAIN, PG_FX, PG_ACC, PG_GROOVE, PG_BASS, PG_MELODY, PG_DRUMS, PG_MELODY2, PG_ACC2, PG_ARP, PG_STUDIO, NPAGE };
 static const char *const PAGE_NAME[NPAGE] = {"MAIN", "FX", "CHORDS", "GROOVE", "BASS", "MELODY", "DRUMS", "MELODY 2", "CHORDS 2",
                                              "ARP", "DRUM STUDIO"};
-static const uint8_t PAGE_BTN[NPAGE] = {0xFF, B_FX, B_SEL, B_ENV, B_LFO, B_EDIT, B_GLO, B_EDIT, B_SEL, B_ARP, B_GLO};   /* EDIT / SEL /
+static const uint8_t PAGE_BTN[NPAGE] = {0xFF, B_FX, B_SEL, B_ENV, B_LFO, B_EDIT, B_GLO, B_EDIT, B_SEL, B_ARP, B_SEQ};   /* EDIT / SEL
                                                                                                                  GLO again: page 2 */
 static const uint8_t PAGE_RGB[NPAGE][3] = {{255, 214, 40}, {90, 200, 255}, {255, 150, 40}, {255, 80, 80},
                                           {80, 230, 120}, {200, 130, 255}, {255, 110, 180}, {200, 130, 255}, {255, 150, 40},
@@ -731,6 +731,8 @@ static int mel_preset_at(int v)
         if (MEL_PRESET[i] == v) return i;
     return -1;
 }
+static const char *const CHR_NAME_B[10] = {"VIPER", "COMET", "NOVA", "PULSAR", "ZENITH", "FLARE", "ORBIT", "RAPTOR", "QUASAR", "ION"};
+static int chars_unlocked(void);
 static const kdef_t KD[NPAGE][4] = {
     {{"CUTOFF", &set.cutoff, 0, 100, KD_PCT, G_PARAMS, 0}, {"GLIDE", &set.glide, 0, 100, KD_GLIDE, G_NONE, 0},
      {"LENGTH", &set.gate, 0, 100, KD_PCT, G_GROOVE, 0}, {"DRUMS", &set.drums, 0, 100, KD_OFF, G_DRUMLVL, 0}},
@@ -749,7 +751,7 @@ static const kdef_t KD[NPAGE][4] = {
     {{"GLIDE", &set.mglide, 0, 40, KD_GLIDE, G_MELODY, 0}, {"OCTAVE", &set.moct, 0, 4, KD_LIST, G_MELODY, MOCT_NAME},
      {"VIBRATO", &set.mvib, 0, 100, KD_OFF, G_MELODY, 0}, {"ASSIST", &set.assist, 0, 2, KD_LIST, G_NONE, ASSIST_NAME}},
     {{"WIDTH", &set.cwidth, 0, 100, KD_PCT, G_CFX, 0}, {"SPREAD", &set.cspread, 0, NSPREAD - 1, KD_LIST, G_CFX, SPREAD_NAME},
-     {0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}},
+     {"SHIP", &set.chr, 0, 9, KD_LIST, G_NONE, CHR_NAME_B}, {0, 0, 0, 0, 0, 0, 0}},
     {{"MODE", &set.carp, 0, NARP - 1, KD_LIST, G_CFX, ARP_NAME}, {"RATE", &set.crate, 0, NARP_RATE - 1, KD_LIST, G_CFX, RATE_NAME},
      {"FLOW", &set.aflow, 0, 100, KD_PCT, G_CFX, 0}, {"SWING", &set.aswing, 0, 100, KD_OFF, G_CFX, 0}},
     {{"TRACK", &set.dtrack, 0, NTRACK - 1, KD_LIST, G_NONE, TRACK_NAME}, {"KIT", &set.dkit, 0, NKIT - 1, KD_LIST, G_GROOVE_ED, KIT_NAME},
@@ -930,7 +932,8 @@ static void knob(int k, int32_t e)
     if (!d->v) return;                   /* (an empty place on the page) */
     prev_drums = set.drums;
     step = d->kind == KD_LIST ? e : d->kind == KD_BPM ? accel(EN_K1 + k, e) : accel(EN_K1 + k, e) * 3;
-    if (d->v == &set.msound) n = MEL_PRESET[clamp(mel_preset_at(set.msound) + step, 0, NMEL_PRESET - 1)];   /* the melody's ones */
+    if (d->v == &set.chr) n = clamp((int32_t)*d->v + step, 0, chars_unlocked() - 1);   /* the ships unlocked */
+    else if (d->v == &set.msound) n = MEL_PRESET[clamp(mel_preset_at(set.msound) + step, 0, NMEL_PRESET - 1)];   /* the melody's ones */
     else n = clamp((int32_t)*d->v + step, d->lo, d->hi);
     if (n == *d->v) return;
     *d->v = (uint8_t)n;
@@ -975,7 +978,6 @@ static void encoder(int k, int32_t e)
 /* While you play (a chord sounds, a melody note, the loop) the little runner runs: its metres add up (kept in the flash, apart
  * from the settings), a run ends after 3 s of quiet (the best one is kept), new characters unlock at so many metres, and
  * there is always a mission (one after the other, a bit harder each round) that gives metres on top. */
-static const char *const CHR_NAME_B[10] = {"VIPER", "COMET", "NOVA", "PULSAR", "ZENITH", "FLARE", "ORBIT", "RAPTOR", "QUASAR", "ION"};
 static const uint32_t UNLOCK_M[10] = {0u, 0u, 250u, 700u, 1400u, 2400u, 3600u, 5200u, 7200u, 10000u};
 #define PROG_MAGIC 0x31524E43u                  /* "CNR1" */
 typedef struct {
@@ -1070,7 +1072,7 @@ static void add_metres(uint32_t m)
     after = chars_unlocked();
     if (after > before) {
         char t[24];
-        t[0] = 0; text_cat(t, CHR_NAME_B[after - 1]); text_cat(t, " - PRESS SEQ");
+        t[0] = 0; text_cat(t, CHR_NAME_B[after - 1]); text_cat(t, " - SEL 2X: SHIP");
         show_toast("NEW SHIP", t);
     }
 }
@@ -1296,12 +1298,12 @@ static void button(int k)
         dirty();
         return;
     }
-    if (k == B_GLO) {                    /* GLO: DRUMS, again: the DRUM STUDIO, again: the main page */
-        set.page = (uint8_t)(set.page == PG_DRUMS ? PG_STUDIO : set.page == PG_STUDIO ? PG_MAIN : PG_DRUMS);
+    if (k == B_SEQ) {                    /* SEQ: the DRUM STUDIO, again: the main page */
+        set.page = (uint8_t)(set.page == PG_STUDIO ? PG_MAIN : PG_STUDIO);
         if (set.page == PG_STUDIO) {
             if (active) { stop(); held_idx = -1; }   /* the keys are the steps now */
             if (!set.drums) { set.drums = 70; send_params(); send_drums(); }
-            app_say("DRUM STUDIO", "KEYS: STEPS  PLAY: LISTEN");
+            app_say("DRUM STUDIO", "WHITE KEYS: STEPS");
         }
         dirty();
         return;
@@ -1342,18 +1344,6 @@ static void button(int k)
         if ((ui.btn >> B_HOME) & 1u) return;      /* HOME + REC: the reset (input), not the loop */
         lp_button(1, plat_ms());                  /* the loop: it acts on release (held: cleared) */
         return;
-    case B_SEQ: {                                /* the character that runs: the next one unlocked */
-        int n = chars_unlocked();
-        set.chr = (uint8_t)((set.chr + 1u) % (uint32_t)(n > 0 ? n : 1));
-        if (n < 10) {
-            char t[24], m[12];
-            t[0] = 0; text_cat(t, CHR_NAME_B[set.chr]); text_cat(t, "  NEXT AT ");
-            int_text((int32_t)UNLOCK_M[n], m); text_cat(t, m); text_cat(t, " M");
-            app_say("SHIP", t);
-        } else app_say("SHIP", CHR_NAME_B[set.chr]);
-        hop_at = plat_ms();
-        break;
-    }
     case B_PLAY: lp_play_button(plat_ms()); return;   /* PLAY / STOP: the loop */
     case B_OCTDN:
     case B_OCTUP:
@@ -1571,8 +1561,8 @@ static void input(void)
     clock_follow(now);
     if (!kb_ready) kb_init();
     if (set.page == PG_STUDIO) {                                /* the studio: the first 16 keys are the steps */
-        for (k = 0; k < 16u; k++)
-            if ((keys >> k & 1u) && !(ui.keys >> k & 1u)) studio_tap((int)k);
+        for (k = 0; k < NKEYS; k++)                             /* the white keys, left to right: steps 1..16 */
+            if ((keys >> k & 1u) && !(ui.keys >> k & 1u) && kb_white[k] >= 0 && kb_white[k] < 16) studio_tap(kb_white[k]);
         if (ld_held) { ld_held = 0; ld_cur = -1; eng_lead(-1.0f); }
     } else
     for (k = 0; k < NKEYS; k++) {                               /* the white keys: the melody voice (the last key pressed sounds) */
@@ -1679,19 +1669,24 @@ static void input(void)
     if (set.page == PG_STUDIO) {                 /* the studio: the track's steps (accents lit, the rest soft), the step playing */
         uint32_t at;
         int ps = eng_last_step(&at, 0);
-        for (k = 0; k < 16u; k++) {
+        for (k = 0; k < 16u; k++) {                             /* on the white keys only */
             uint8_t v = wk.st[set.dtrack][k];
-            if (v == 2) lit_keys |= 1u << k; else if (v) mid_keys |= 1u << k;
+            uint32_t b = 1u << (uint32_t)kb_wkey[k];
+            if (v == 2) lit_keys |= b; else if (v) mid_keys |= b;
         }
         if (ps >= 0 && ps < 16 && (preview || active) && now - at < 400u) {
-            uint32_t b = 1u << (uint32_t)ps;
+            uint32_t b = 1u << (uint32_t)kb_wkey[ps];
             if (lit_keys & b) lit_keys &= ~b; else lit_keys |= b;
         }
-        lit_btn |= 1u << B_GLO;
+        lit_btn |= 1u << B_SEQ;
         if (preview) lit_btn |= (1u << B_PLAY) | LED_PLAY_GREEN;
         if (wk_edited && (now / 400u) % 2u) lit_btn |= 1u << B_SAVE;
         lit_btn |= btn & ((1u << 14) - 1u);
-        plat_lights(lit_btn, lit_keys, 0, (1u << NKEYS) - 1u, 1);
+        {   /* only the 16 white keys glow: the black ones stay dark */
+            uint32_t wm = 0;
+            for (k = 0; k < 16u; k++) wm |= 1u << (uint32_t)kb_wkey[k];
+            plat_lights(lit_btn, lit_keys, 0, wm, 1);
+        }
         plat_lights_mid(((1u << 14) - 1u) & ~lit_btn, mid_keys & ~lit_keys);
         return;
     }

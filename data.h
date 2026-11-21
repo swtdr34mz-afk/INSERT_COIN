@@ -59,26 +59,26 @@ static const sound_t SOUNDS[NSOUND] = {
 /* the melody's presets (MELODY page, PRESET): the value is the sound + 1 (0 = as the chords); all of them */
 static const uint8_t MEL_PRESET[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
 #define NMEL_PRESET ((int)(sizeof MEL_PRESET / sizeof MEL_PRESET[0]))
-#define NRHYTHM 12
+#define NRHYTHM 11
 #define RH_FULL 8                        /* FULL: the chord held and latched, the drums and the bass on */
-static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "OFFBEAT", "PUMP", "SYNCOPATED", "TRESILLO", "HALF-TIME",
-                                                 "FULL", "STACCATO", "GALLOP", "STABS"};
+static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "UPBEAT", "BUZZ", "MARCH", "SHUFFLE", "PUNCH",
+                                                 "FULL", "DOTTED", "RUSH"};
 /* the order ALGORITHM turns through them */
-static const uint8_t RHYTHM_ORDER[NRHYTHM] = {0, RH_FULL, 1, 2, 9, 3, 4, 5, 11, 6, 10, 7};
-/* 16 steps: X accent, x soft, - tie, . rest ("" = held while the key is down; "=" = FULL: held until the key again) */
+static const uint8_t RHYTHM_ORDER[NRHYTHM] = {0, RH_FULL, 1, 2, 3, 4, 5, 6, 7, 9, 10};
+/* 16 steps: X accent, x soft, - tie, . rest ("" = held while the key is down; "=" = FULL: held until the key again).
+ * After QUARTERS and EIGHTHS, the 8-bit games' own ways to play chords: short, clipped hits, as the pulse channels did */
 static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTHM] = {
     {"", 0.0f, 0.0f, 0.0f},
     {"X---x---X---x---", 0.85f, 0.0f, 0.0f},
     {"X-x-X-x-X-x-X-x-", 0.6f, 0.0f, 0.0f},
-    {"..X...X...X...X.", 0.55f, 0.0f, 0.0f},
-    {"X---X---X---X---", 0.95f, 0.0f, 0.09f},
-    {"X..x..x...x..x..", 0.4f, 0.0f, 0.0f},
-    {"X--x--x-X--x--x-", 0.7f, 0.0f, 0.0f},
-    {"X-------x-----x-", 0.9f, 0.0f, 0.0f},
+    {"..X...X...X...X.", 0.3f, 0.0f, 0.0f},      /* UPBEAT: short chords between the beats (the bass on them): oom-pah */
+    {"XxxxXxxxXxxxXxxx", 0.3f, 0.0f, 0.0f},      /* BUZZ: sixteenths, clipped, an accent on each beat */
+    {"X.xxX.x.X.xxX.x.", 0.35f, 0.0f, 0.0f},     /* MARCH: a hero's march, with its little run-ups */
+    {"X.x.X.x.X.x.X.x.", 0.4f, 0.33f, 0.0f},     /* SHUFFLE: swung eighths, a bouncy level */
+    {"X..X..X...X..X..", 0.3f, 0.0f, 0.0f},      /* PUNCH: syncopated stabs (3 + 3 + 2) */
     {"=", 0.0f, 0.0f, 0.0f},
-    {"X.x.X.x.X.x.X.x.", 0.22f, 0.0f, 0.0f},     /* STACCATO: short 8-bit chord hits */
-    {"X.xxX.xxX.xxX.xx", 0.35f, 0.0f, 0.0f},     /* GALLOP: a fortress's ride */
-    {"X.....X.....X...", 0.3f, 0.0f, 0.0f},      /* STABS: short hits across the bar */
+    {"X--X--X-X--X--X-", 0.8f, 0.0f, 0.0f},      /* DOTTED: dotted quarters, long and driving */
+    {"X...X...X.x.XxXx", 0.35f, 0.0f, 0.0f},     /* RUSH: it speeds up into the next bar */
 };
 /* the sets' scales (the melody's notes): their steps above the key */
 enum { SC_AUTO, SC_MAJOR, SC_MINOR, SC_HARM, SC_DORIAN, SC_MIXO, SC_PHRYG, SC_PHRYGDOM, SC_LYDIAN, SC_MAJPENTA, SC_MINPENTA,
@@ -109,7 +109,7 @@ static const struct {
 } GRID_DEF[NGRID] = {
     {"TOXIC PLANT", "FACTORY ZONE", 7, 0, "0m 8M 10M 5m 3M 2m", 12, 1, BASS_ACID, MOTIF_ROULE, 2, 15, 145, SC_MINOR,
      0, ARP_R_16, 10, 20, 25, 0, 30, ST_FACTORY, 0, 40, 0},
-    {"HEROS FIELD", "HERO ADVENTURE", 10, 0, "0M 10M 5M 8M 3M 2m", 2, 1, BASS_TRI, MOTIF_GALOP, 6, 1, 125, SC_MIXO,
+    {"HEROS FIELD", "HERO ADVENTURE", 10, 0, "0M 10M 5M 8M 3M 2m", 2, 1, BASS_TRI, MOTIF_GALOP, 5, 1, 125, SC_MIXO,
      0, ARP_R_16, 20, 0, 0, 0, 30, ST_FIELD, 0, 0, 0},
     {"BLOCK DROP", "BLOCK WORLD", 9, 0, "0m 7M 5m 3M 10M 8M", 2, 1, BASS_TRI, MOTIF_OCTAVES, 1, 8, 150, SC_HARM,
      0, ARP_R_16, 5, 0, 0, 0, 30, ST_BLOCKS, 1, 0, 0},
@@ -117,9 +117,9 @@ static const struct {
      ARP_UP2, ARP_R_CHIP, 10, 10, 15, 0, 30, ST_FORTRESS, 0, 0, 0},
     {"MAGMA RUSH", "LAVA LEVEL", 4, 0, "0m 1M 3M 10M 8M 5m", 1, 4, BASS_PULSE, MOTIF_ROULE, RH_FULL, 12, 160, SC_PHRYG,
      ARP_UP, ARP_R_CHIP, 10, 0, 30, 0, 20, ST_LAVA, 0, 0, 0},
-    {"NIGHT CASTLE", "BOSS CASTLE", 2, 0, "0m 10M 8M 7M 5m 3M", 4, 9, BASS_PULSE, MOTIF_GALOP, 4, 10, 140, SC_HARM,
+    {"NIGHT CASTLE", "BOSS CASTLE", 2, 0, "0m 10M 8M 7M 5m 3M", 4, 9, BASS_PULSE, MOTIF_GALOP, 9, 10, 140, SC_HARM,
      0, ARP_R_16, 45, 0, 0, 0, 25, ST_CASTLE, 0, 0, 100},
-    {"COAST DRIVE", "BEACH RACE", 5, 1, "0M 2m 4m 5M 7D 9m", 15, 11, BASS_PLUCK, MOTIF_SYNCOPE, 3, 5, 140, SC_MAJOR,
+    {"COAST DRIVE", "BEACH RACE", 5, 1, "0M 2m 4m 5M 7D 9m", 15, 11, BASS_PLUCK, MOTIF_SYNCOPE, 6, 5, 140, SC_MAJOR,
      0, ARP_R_16, 20, 0, 0, 40, 20, ST_BEACH, 0, 0, 0},
     {"ALIEN CAVES", "ALIEN PLANET", 4, 0, "0m 8M 5m 1M 3M 10M", 10, 4, BASS_SUB, MOTIF_TENUE, 7, 12, 100, SC_PHRYG,
      0, ARP_R_16, 40, 40, 10, 0, 30, ST_SPACE, 0, 0, 0},
