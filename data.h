@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 Obsimo (OSR Records)
+ * Copyright (C) 2026 swtdr34mz (PIXEL RUN: the chip sounds, the game sets) */
+/* PIXEL RUN data: the sounds (chip waveforms and 16-bit FM), the chord rhythms, and the 20 sets: chord progressions in the
+ * style of famous video game tunes, under names of their own (no game's or company's name). Written by hand. */
+#pragma once
+static const char *const FAMILY_NAME[4] = {"PULSE", "WAVE", "COMPUTER", "16-BIT FM"};
+#define NFAMILY 4
+#define NSOUND 17
+static const uint8_t FAMILY_OF[NSOUND] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 3, 3, 3, 3};
+static const char *const SOUND_NAME[NSOUND] = {
+    "NES PULSE", "THIN PULSE", "QUARTER PULSE", "PWM SWEEP", "CHIP ORGAN", "POWER PULSE", "ZAP LEAD", "BLIP PLUCK",
+    "8BIT PAD", "WAVE WARM", "WAVE VOICE", "TRI KEYS", "COMPUTER SAW", "FM BRASS", "FM BELL", "FM E.PIANO", "FM STRINGS",
+};
+/* engine, w1, w2, detune (cents), osc 2 (semitones), its level,
+ * FM ratio, index, index decay, index sustain, feedback,   pluck brightness, damping,
+ * attack, decay, sustain, release,   filter env (octaves), its decay,   chorus, wobble (cents), its rate,
+ * noise, bass, level, own cutoff (Hz at CUTOFF 50 %),   chip: pitch drop (semitones), its time, PWM depth, its rate, steps */
+static const sound_t SOUNDS[NSOUND] = {
+    /* PULSE: the 8-bit consoles' square waves */
+    {ENGINE_SUB, W_SQUARE, W_SQUARE, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.002f, 0.30f, 0.70f, 0.08f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.62f, 9000.0f, 0, 0, 0, 0, 0},      /* NES PULSE */
+    {ENGINE_SUB, W_P12, W_P12, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.002f, 0.25f, 0.60f, 0.10f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.95f, 9000.0f, 0, 0, 0, 0, 0},      /* THIN PULSE */
+    {ENGINE_SUB, W_P25, W_P25, 7.0f, 0.0f, 0.55f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.002f, 0.30f, 0.65f, 0.12f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.62f, 9000.0f, 0, 0, 0, 0, 0},      /* QUARTER PULSE */
+    {ENGINE_SUB, W_PWM, W_PWM, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.010f, 0.40f, 0.80f, 0.25f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.70f, 9000.0f, 0, 0, 0.9f, 0.7f, 0}, /* PWM SWEEP */
+    {ENGINE_SUB, W_SQUARE, W_SQUARE, 0.0f, 12.0f, 0.6f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.004f, 0.20f, 1.00f, 0.06f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.48f, 7000.0f, 0, 0, 0, 0, 0},      /* CHIP ORGAN */
+    {ENGINE_SUB, W_SQUARE, W_P25, 0.0f, -12.0f, 0.8f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.002f, 0.30f, 0.90f, 0.10f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.50f, 8000.0f, 0, 0, 0, 0, 5.0f},   /* POWER PULSE */
+    {ENGINE_SUB, W_SQUARE, W_SQUARE, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.001f, 0.30f, 0.70f, 0.10f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.62f, 9000.0f, 12.0f, 0.06f, 0, 0, 0}, /* ZAP LEAD: a laser's drop */
+    {ENGINE_SUB, W_P25, W_P25, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.001f, 0.15f, 0.00f, 0.10f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.80f, 9000.0f, -12.0f, 0.02f, 0, 0, 0}, /* BLIP PLUCK: a coin's jump */
+    {ENGINE_SUB, W_PWM, W_P25, 8.0f, 0.0f, 0.6f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.250f, 0.60f, 0.90f, 0.80f, 0.0f, 0.3f, 0.4f, 0.0f, 0.3f, 0.0f, 0.45f, 0.50f, 6000.0f, 0, 0, 0.5f, 0.3f, 7.0f}, /* 8BIT PAD */
+    /* WAVE: the handheld's 4-bit wave channel, the consoles' triangle */
+    {ENGINE_SUB, W_WAVE, W_WAVE, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.003f, 0.40f, 0.70f, 0.20f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.85f, 7000.0f, 0, 0, 0, 0, 0},      /* WAVE WARM */
+    {ENGINE_SUB, W_VOICE, W_VOICE, 0.0f, 0.0f, 0.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.020f, 0.50f, 0.80f, 0.30f, 0.0f, 0.3f, 0.0f, 8.0f, 5.0f, 0.0f, 0.45f, 0.85f, 7000.0f, 0, 0, 0, 0, 0},      /* WAVE VOICE */
+    {ENGINE_SUB, W_NTRI, W_SQUARE, 0.0f, 12.0f, 0.25f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.002f, 0.20f, 0.40f, 0.15f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 1.00f, 9000.0f, 0, 0, 0, 0, 0},      /* TRI KEYS */
+    /* COMPUTER: a home computer's stepped saws through its filter */
+    {ENGINE_SUB, W_CSAW, W_CSAW, 10.0f, 0.0f, 0.7f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.003f, 0.30f, 0.70f, 0.20f, 2.0f, 0.25f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.65f, 1800.0f, 0, 0, 0, 0, 0},     /* COMPUTER SAW */
+    /* 16-BIT FM: the 16-bit consoles' FM chip */
+    {ENGINE_FM, W_SINE, W_SINE, 0.0f, 0.0f, 0.0f, 1.0f, 2.4f, 0.30f, 0.50f, 0.30f, 0.6f, 0.996f,
+     0.020f, 0.30f, 0.80f, 0.20f, 0.0f, 0.3f, 0.3f, 0.0f, 0.3f, 0.0f, 0.45f, 0.80f, 6000.0f, 0, 0, 0, 0, 0},      /* FM BRASS */
+    {ENGINE_FM, W_SINE, W_SINE, 0.0f, 0.0f, 0.0f, 3.5f, 2.0f, 0.25f, 0.00f, 0.00f, 0.6f, 0.996f,
+     0.001f, 0.80f, 0.00f, 0.60f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.90f, 8000.0f, 0, 0, 0, 0, 0},      /* FM BELL */
+    {ENGINE_FM, W_SINE, W_SINE, 0.0f, 0.0f, 0.0f, 1.0f, 1.4f, 0.50f, 0.25f, 0.05f, 0.6f, 0.996f,
+     0.002f, 1.00f, 0.20f, 0.40f, 0.0f, 0.3f, 0.0f, 0.0f, 0.3f, 0.0f, 0.45f, 0.90f, 5000.0f, 0, 0, 0, 0, 0},      /* FM E.PIANO */
+    {ENGINE_SUB, W_SAW, W_SAW, 14.0f, 0.0f, 1.0f, 1, 1, 0.4f, 0.2f, 0, 0.6f, 0.996f,
+     0.200f, 0.50f, 0.90f, 0.60f, 0.0f, 0.3f, 0.6f, 0.0f, 0.3f, 0.0f, 0.45f, 0.60f, 3000.0f, 0, 0, 0, 0, 0},      /* FM STRINGS */
+};
+/* the melody's presets (MELODY page, PRESET): the value is the sound + 1 (0 = as the chords); all of them */
+static const uint8_t MEL_PRESET[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
+#define NMEL_PRESET ((int)(sizeof MEL_PRESET / sizeof MEL_PRESET[0]))
+#define NRHYTHM 9
+#define RH_FULL 8                        /* FULL: the chord held and latched, the drums and the bass on */
+static const char *const RHYTHM_NAME[NRHYTHM] = {"HELD", "QUARTERS", "EIGHTHS", "OFFBEAT", "PUMP", "SYNCOPATED", "TRESILLO", "HALF-TIME",
+                                                 "FULL"};
+/* the order ALGORITHM turns through them */
+static const uint8_t RHYTHM_ORDER[NRHYTHM] = {0, RH_FULL, 1, 2, 3, 4, 5, 6, 7};
+/* 16 steps: X accent, x soft, - tie, . rest ("" = held while the key is down; "=" = FULL: held until the key again) */
+static const struct { const char *s; float gate, swing, atk; } RHYTHM_DEF[NRHYTHM] = {
+    {"", 0.0f, 0.0f, 0.0f},
+    {"X---x---X---x---", 0.85f, 0.0f, 0.0f},
+    {"X-x-X-x-X-x-X-x-", 0.6f, 0.0f, 0.0f},
+    {"..X...X...X...X.", 0.55f, 0.0f, 0.0f},
+    {"X---X---X---X---", 0.95f, 0.0f, 0.09f},
+    {"X..x..x...x..x..", 0.4f, 0.0f, 0.0f},
+    {"X--x--x-X--x--x-", 0.7f, 0.0f, 0.0f},
+    {"X-------x-----x-", 0.9f, 0.0f, 0.0f},
+    {"=", 0.0f, 0.0f, 0.0f},
+};
+#define NGRID 20
+/* the SETS: the chords of a tune, one per BLACK key from the left (up to 8); the white keys play a melody in the scale of the
+ * chord that sounds. A chord is its semitones above the set's key + a quality (M maj, V dominant-major, m, D dom7, d dim,
+ * s sus4, S sus2, a aug); key 0 = C .. 11 = B, rich the richness it starts with. The progressions are written by ear in the
+ * style of famous video game tunes (a chord progression is no one's own), under names of their own.
+ * Then the set's own sound, set when it is chosen: the chords' sound, the melody's (0 = as the chords, else the sound + 1),
+ * the bass's sound and riff, the chord rhythm (taken only when a rhythm plays), the drum groove, the tempo, lock (1: the
+ * melody keeps the set's own scale), and the chip arpeggio (ARP mode, 0 = off, and its rate). */
+static const struct {
+    const char *name, *by;
+    uint8_t key, rich;
+    const char *white;
+    uint8_t snd, msnd, bsnd, bmot, rhy, dpat, bpm, lock, arp, arate;
+} GRID_DEF[NGRID] = {
+    {"PLUMBER OVERWORLD", "SUNNY PLATFORMER", 0, 0, "0M 5M 7D 9m 8M 10M", 0, 2, BASS_TRI, MOTIF_OCTAVES, 2, 0, 150, 0, ARP_UP, ARP_R_CHIP},
+    {"PIPE UNDERGROUND", "BELOW THE BRICKS", 0, 0, "0m 9m 10M 3M 5m 8M", 1, 1, BASS_TRI, MOTIF_CONTRE, 3, 6, 100, 0, 0, ARP_R_16},
+    {"SKY ATHLETIC", "BOUNCY SKY STAGE", 5, 0, "0M 9m 5M 7D 2m 4D", 9, 3, BASS_PULSE, MOTIF_GALOP, 5, 2, 120, 0, 0, ARP_R_16},
+    {"GREEN LOOP ZONE", "16-BIT SPEED STAGE", 0, 1, "0M 9m 2m 7D 4m 5M", 13, 15, BASS_FM, MOTIF_SYNCOPE, 5, 16, 140, 0, 0, ARP_R_16},
+    {"TOXIC PLANT", "FACTORY ZONE", 7, 0, "0m 8M 10M 5m 3M 2m", 13, 4, BASS_FM, MOTIF_ROULE, 2, 15, 150, 0, 0, ARP_R_16},
+    {"HEROS FIELD", "HEROIC OVERWORLD", 10, 0, "0M 10M 5M 8M 3M 2m", 0, 3, BASS_TRI, MOTIF_GALOP, 6, 1, 130, 0, 0, ARP_R_16},
+    {"BLOCK DROP", "FALLING BLOCKS", 9, 0, "0m 7M 5m 3M 10M 8M", 2, 2, BASS_TRI, MOTIF_OCTAVES, 2, 8, 150, 0, ARP_UP, ARP_R_CHIP},
+    {"ROBOT FORTRESS", "FORTRESS STAGE", 4, 0, "0m 8M 10M 7m 5m 3M", 5, 3, BASS_PULSE, MOTIF_ROULE, 2, 7, 150, 0, 0, ARP_R_16},
+    {"FIRST ROUTE", "FIRST JOURNEY", 2, 0, "0M 5M 7M 4m 9m 2m", 9, 1, BASS_TRI, MOTIF_OCTAVES, 1, 0, 120, 0, 0, ARP_R_16},
+    {"WILD ENCOUNTER", "WILD BATTLE", 4, 0, "0m 1M 3M 10M 8M 5m", 1, 3, BASS_TRI, MOTIF_ROULE, 2, 4, 150, 0, ARP_UP, ARP_R_CHIP},
+    {"NIGHT CASTLE", "CASTLE STAGE", 2, 0, "0m 10M 8M 7M 5m 3M", 12, 1, BASS_PULSE, MOTIF_OCTAVES, 2, 3, 150, 0, 0, ARP_R_16},
+    {"AIR BASE", "SOLDIER THEME", 3, 0, "0m 10M 8M 5m 3M 7M", 13, 14, BASS_FM, MOTIF_SYNCOPE, 5, 17, 130, 0, 0, ARP_R_16},
+    {"COAST DRIVE", "SEASIDE RACE", 5, 1, "0M 2m 4m 5M 7D 9m", 15, 15, BASS_PLUCK, MOTIF_SYNCOPE, 5, 5, 140, 0, 0, ARP_R_16},
+    {"CRYSTAL PRELUDE", "CRYSTAL HARP", 0, 0, "0M 9m 5M 7M 8M 10M", 11, 1, BASS_TRI, MOTIF_TENUE, 0, 9, 100, 0, ARP_UPDOWN2, ARP_R_16},
+    {"TIME CORRIDOR", "HALL OF TIME", 9, 1, "0m 5m 10D 3M 8M 2d 7D", 14, 11, BASS_ROND, MOTIF_SUIT, 6, 16, 120, 0, 0, ARP_R_16},
+    {"DEEP REEF", "UNDERWATER CAVE", 4, 2, "0M 5M 9m 7M", 8, 11, BASS_SUB, MOTIF_TENUE, 7, 11, 90, 0, 0, ARP_R_16},
+    {"DREAM GREENS", "DREAMY MEADOW", 7, 0, "0M 5M 7M 9m 2m 7D", 2, 2, BASS_TRI, MOTIF_OCTAVES, 3, 2, 140, 0, 0, ARP_R_16},
+    {"ALIEN CAVES", "ALIEN PLANET", 4, 0, "0m 8M 5m 1M 3M 10M", 10, 4, BASS_SUB, MOTIF_TENUE, 7, 12, 100, 0, 0, ARP_R_16},
+    {"CITY BRAWL", "NEON STREET", 9, 0, "0m 8M 3M 10M", 15, 15, BASS_FM, MOTIF_CONTRE, 4, 13, 128, 0, 0, ARP_R_16},
+    {"STAR ROAD", "RAINBOW RACE", 2, 0, "0M 4m 9m 5M 2m 7M", 8, 10, BASS_PULSE, MOTIF_SYNCOPE, 2, 5, 140, 0, ARP_UP2, ARP_R_16},
+};

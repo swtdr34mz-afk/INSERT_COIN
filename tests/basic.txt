@@ -1,0 +1,229 @@
+# PIXEL RUN in the host simulator:
+#   X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host, then build/host/pixelrun_host tests/basic.txt build/host
+wait 600
+shot intro.png
+wait 3400
+shot boot.png
+# first start: chip drums on, FULL (the chords held, the drums with them), the first set with its chip arpeggio
+expect page 0
+expect grid 0
+expect rhythm 8
+expect carp 1
+expect crate 8
+expect bsound 7
+expect drums 70
+# a chord: latched (FULL), the drums and the chip arpeggio run
+key b0 down
+wait 30
+key b0 up
+wait 40
+expect active 1
+expect chord 1
+wav set1_arp.wav
+wait 2500
+wavstop
+shot main.png
+# the melody over it
+tapkey w4
+wait 300
+key b1 down
+wait 30
+key b1 up
+wait 1200
+key b1 down
+wait 30
+key b1 up
+wait 400
+expect active 0
+# every set has chords and its own sound
+turn SELECT 3
+wait 100
+expect grid 3
+expect sound 13
+key b0 down
+wait 30
+key b0 up
+wait 30
+wav set4_fm.wav
+wait 2500
+wavstop
+shot set4.png
+key b0 down
+wait 30
+key b0 up
+wait 400
+turn SELECT 16
+wait 100
+expect grid 19
+key b2 down
+wait 30
+key b2 up
+wav set20.wav
+wait 2500
+wavstop
+key b2 down
+wait 30
+key b2 up
+wait 300
+# the bitcrusher (FX page, K2)
+tap FX
+wait 50
+expect page 1
+turn K2 10
+wait 300
+expect crush >20
+shot fx.png
+key b0 down
+wait 30
+key b0 up
+wav crush.wav
+wait 2000
+wavstop
+key b0 down
+wait 30
+key b0 up
+wait 300
+turn K2 -40
+wait 300
+expect crush 0
+tap FX
+wait 50
+expect page 0
+# the drums: GLO, the style list (20 grooves, then the user slots)
+tap GLO
+wait 50
+expect page 6
+turn K1 4
+wait 300
+expect dpat 9
+shot drums.png
+# GLO again: the DRUM STUDIO; the keys are steps now (no chord), PLAY the drums alone
+tap GLO
+wait 50
+expect page 10
+shot studio.png
+key 0 down
+wait 30
+key 0 up
+wait 30
+expect active 0
+tap PLAY
+wait 50
+expect preview 1
+wav studio_preview.wav
+wait 2000
+wavstop
+# REC clears the track (KICK), then a beat of our own: four on the floor, accents
+tap REC
+wait 50
+expect step0 0
+expect step4 0
+tapkey 0
+wait 30
+tapkey 4
+wait 30
+tapkey 8
+wait 30
+tapkey 12
+wait 30
+expect step0 2
+expect step4 2
+expect edited 1
+# a tap again: soft, again: off
+tapkey 12
+wait 30
+expect step12 1
+tapkey 12
+wait 30
+expect step12 0
+# the hats (K1: track): open and a roll
+turn K1 2
+wait 200
+expect dtrack 2
+tap REC
+wait 30
+tapkey 2
+wait 30
+tapkey 6
+wait 30
+tapkey 6
+wait 30
+tapkey 6
+wait 30
+expect step6 3
+tapkey 14
+wait 30
+tapkey 14
+wait 30
+tapkey 14
+wait 30
+tapkey 14
+wait 30
+expect step14 4
+# the kit (K2) and the swing (K3)
+turn K2 -2
+wait 200
+expect dkit 2
+turn K3 10
+wait 300
+shot studio_edit.png
+wav studio_own.wav
+wait 2000
+wavstop
+# SAVE: into USER 1 (K4), the style is then that slot, kept across a reboot
+expect used0 0
+tap SAVE
+wait 600
+expect used0 1
+expect dpat 20
+expect edited 0
+tap PLAY
+wait 50
+expect preview 0
+# out of the studio: no preview
+tap GLO
+wait 50
+expect page 0
+wait 5000
+reboot
+wait 4200
+expect used0 1
+expect dpat 20
+tap GLO
+wait 50
+tap GLO
+wait 50
+expect page 10
+expect dtrack 2
+expect step6 3
+expect step14 4
+shot studio_kept.png
+tap GLO
+wait 50
+# the loop: 8 bars at the most (REC, a chord starts it, REC closes it at its bar)
+turn SELECT -19
+wait 100
+expect grid 0
+tap REC
+wait 50
+expect loop 1
+key b0 down
+wait 30
+key b0 up
+wait 400
+expect loop 2
+key b2 down
+wait 30
+key b2 up
+wait 3000
+shot loop_rec.png
+tap REC
+wait 600
+expect loop 3
+expect loopn >1
+wav loop.wav
+wait 3000
+wavstop
+tap PLAY
+wait 100
+expect loop 4

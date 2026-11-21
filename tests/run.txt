@@ -1,0 +1,70 @@
+# PIXEL RUN: the runner, the first mission (PLAY 24 CHORDS), the progress kept across a reboot
+wait 4200
+expect mission 0
+expect metres <20
+# rhythm HELD (ALGORITHM one back from FULL): a chord sounds while its key is down
+turn ALGO -1
+wait 50
+expect rhythm 0
+key b0 down
+wait 2000
+expect running 1
+key b0 up
+wait 50
+expect metres >15
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 100
+tapkey b0
+wait 100
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 100
+tapkey b0
+wait 100
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 100
+tapkey b0
+wait 100
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 100
+tapkey b0
+wait 100
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 100
+tapkey b0
+wait 100
+tapkey b1
+wait 100
+tapkey b2
+wait 100
+tapkey b3
+wait 300
+expect missions 1
+expect mission 1
+shot mission.png
+# quiet: the run ends, the progress is saved, kept across a reboot
+wait 9000
+expect running 0
+reboot
+wait 4200
+expect missions 1
+expect metres >150
