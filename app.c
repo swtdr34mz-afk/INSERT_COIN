@@ -39,7 +39,7 @@
 #include "patterns.h"
 
 /* ------------------------------------------------------------------ settings --- */
-#define SET_MAGIC 0x50525533u            /* "PRU3": 11 sets */
+#define SET_MAGIC 0x50525534u            /* "PRU4": 10 sets */
 typedef struct {
     uint32_t magic;
     uint8_t grid, key, rich, voicing;
@@ -105,6 +105,8 @@ static void song_style(void)
     set.reverb = GRID_DEF[set.grid].rev; set.delay = GRID_DEF[set.grid].del;
     set.crush = GRID_DEF[set.grid].crush; set.chorus = GRID_DEF[set.grid].chorus;
     set.mvib = GRID_DEF[set.grid].mvib;
+    set.drums = GRID_DEF[set.grid].dlev ? GRID_DEF[set.grid].dlev : 70;
+    set.mlev = GRID_DEF[set.grid].mlev ? GRID_DEF[set.grid].mlev : 80;
     if (GRID_DEF[set.grid].guide) set.assist = 2;     /* its tune lights up (ASSIST: GUIDE) */
     else if (set.assist == 2) set.assist = 0;
     groove_load(set.dpat);

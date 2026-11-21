@@ -10,7 +10,7 @@ expect grid 0
 expect rhythm 2
 expect carp 0
 expect bsound 3
-expect drums 70
+expect drums 40
 # a chord: latched (FULL), the drums and the chip arpeggio run
 key b0 down
 wait 30
@@ -53,7 +53,7 @@ key b0 up
 wait 400
 turn SELECT 16
 wait 100
-expect grid 8
+expect grid 9
 key b2 down
 wait 30
 key b2 up
@@ -94,7 +94,7 @@ wait 50
 expect page 6
 turn K1 4
 wait 300
-expect dpat 16
+expect dpat 18
 shot drums.png
 # GLO again: the DRUM STUDIO; the keys are steps now (no chord), PLAY the drums alone
 tap GLO

@@ -15,8 +15,8 @@ fires on every key you play.
 
 ## What it does
 
-- **Sets:** 11 levels, each a chord progression in the style of a famous video game tune, under a name of its own:
-  toxic plant, hero field, block drop, robot fortress, magma rush, night castle, coast drive, deep reef, alien caves,
+- **Sets:** 10 levels, each a chord progression in the style of a famous video game tune, under a name of its own:
+  toxic plant, hero field, block drop, robot fortress, magma rush, night castle, coast drive, alien caves,
   dream greens, star road. A set's chords sit on the **black keys** (left to right). Each set brings its own sound, chord
   rhythm, scale, tempo, bass riff, drum groove and effects; three of them the chip arpeggio.
 - **Melody:** the **white keys** follow the chord: FOLLOW SMART (MELODY page, the start) keeps each key on its note of
