@@ -228,6 +228,25 @@ static inline float tri4(float ph)        /* the 8-bit consoles' triangle: 16 st
     int k = (int)(ph * 32.0f) & 31;
     return (float)(k < 16 ? k : 31 - k) * (2.0f / 15.0f) - 1.0f;
 }
+/* a stepped wave with its steps band-limited: each step still a step (the chip's grit, its harmonics), but where it
+ * falls between two samples it is smoothed as the saw's jump is (polyBLEP). Snapped to the sample grid, as before,
+ * the steps landed a little early or late each cycle: an unpitched fizz and whine over high notes, which the chips
+ * (stepping at their own MHz clock) never had. n: 32 or 16 steps, its values 0..15 */
+static float tri_t[32], csaw_t[16];
+static inline float stepped(const uint8_t *t8, const float *tf, uint32_t n, float ph, float dt)
+{
+    float x = ph * (float)n, w = 1.0f / (float)n, u0, d1, y;
+    uint32_t k = (uint32_t)x & (n - 1u), kp = (k - 1u) & (n - 1u), kn = (k + 1u) & (n - 1u);
+    float a = t8 ? (float)t8[k] : tf[k], b = t8 ? (float)t8[kp] : tf[kp], c = t8 ? (float)t8[kn] : tf[kn];
+    u0 = (x - (float)(int32_t)x) * w;     /* since the last step, in cycles */
+    d1 = w - u0;                          /* to the next */
+    y = a;
+    if (u0 < dt)
+        y += 0.5f * (a - b) * blep(u0, dt);
+    if (d1 < dt)
+        y += 0.5f * (c - a) * blep(1.0f - d1, dt);
+    return y * (2.0f / 15.0f) - 1.0f;
+}
 static float g_pw = 0.5f;                 /* W_PWM: the pulse width this chunk */
 static inline float osc(int w, float ph, float dt)
 {
@@ -235,10 +254,10 @@ static inline float osc(int w, float ph, float dt)
     case W_P12: return pulse(ph, dt, 0.125f);
     case W_P25: return pulse(ph, dt, 0.25f);
     case W_PWM: return pulse(ph, dt, g_pw);
-    case W_NTRI: return tri4(ph);
-    case W_WAVE: return (float)WAVE_T[(int)(ph * 32.0f) & 31] * (2.0f / 15.0f) - 1.0f;
-    case W_VOICE: return (float)VOICE_T[(int)(ph * 32.0f) & 31] * (2.0f / 15.0f) - 1.0f;
-    case W_CSAW: return (float)((int)(ph * 16.0f) & 15) * (2.0f / 15.0f) - 1.0f;
+    case W_NTRI: return stepped(0, tri_t, 32u, ph, dt);
+    case W_WAVE: return stepped(WAVE_T, 0, 32u, ph, dt);
+    case W_VOICE: return stepped(VOICE_T, 0, 32u, ph, dt);
+    case W_CSAW: return stepped(0, csaw_t, 16u, ph, dt);
     case W_SAW: return 2.0f * ph - 1.0f - blep(ph, dt);
     case W_SQUARE: {
         float s = ph < 0.5f ? 1.0f : -1.0f, p2 = ph + 0.5f;
@@ -855,12 +874,22 @@ static void run_commands(void)
     }
 }
 
+static void stepped_init(void)
+{
+    uint32_t k;
+    for (k = 0; k < 32u; k++)
+        tri_t[k] = (float)(k < 16u ? k : 31u - k);
+    for (k = 0; k < 16u; k++)
+        csaw_t[k] = (float)k;
+}
+
 void eng_init(void)
 {
     int i;
     zero(&E, sizeof E);
     zero(ks_buf, sizeof ks_buf);
     zero(lks_buf, sizeof lks_buf);
+    stepped_init();
     zero(ch_buf, sizeof ch_buf);
     zero(lr_line, sizeof lr_line);
     zero(lr_ap0, sizeof lr_ap0);
@@ -1202,7 +1231,7 @@ void eng_render(int32_t *lr, uint32_t n, float gain)
                     case BASS_ACID: o = osc(W_SAW, E.bp, bi) * 0.9f; break;
                     case BASS_REESE: o = (osc(W_SAW, E.bp, bi) + osc(W_SAW, E.b2, bi * 1.007f)) * 0.5f; break;
                     case BASS_PLUCK: o = osc(W_SQUARE, E.bp, bi) * 0.45f + fm_sin_turns(E.bs) * 0.6f; break;
-                    case BASS_TRI: o = tri4(E.bp) * 1.05f; break;                       /* the 8-bit consoles' bass */
+                    case BASS_TRI: o = stepped(0, tri_t, 32u, E.bp, bi) * 1.05f; break;                       /* the 8-bit consoles' bass */
                     case BASS_PULSE: o = pulse(E.bp, bi, 0.25f) * 0.5f + tri4(E.bs) * 0.35f; break;
                     default: o = fm_sin_turns(E.bp + (0.1f + 0.35f * E.bfenv) * fm_sin_turns(E.bp)) * 1.1f; break;
                     }
